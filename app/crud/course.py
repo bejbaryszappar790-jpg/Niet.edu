@@ -21,12 +21,18 @@ def create_course(db : Session, course_name : str, course_sphere : str, teacher_
     
     if teacher != None:
         check_course = db.query(Course).filter(Course.course_name == course_name, Course.course_sphere == course_sphere).first()
-
+        
         if check_course != None:
-            new_workshop = Workshop(teacher_id = teacher.teacher_id, course_id = check_course.course_id)
-            db.add(new_workshop)
-            db.commit()
-            return check_course
+            check_workshop = db.query(Workshop).filter(Workshop.course_id == check_course.course_id, Workshop.teacher_id == teacher.teacher_id).first()
+            
+            if check_workshop == None:
+                
+                new_workshop = Workshop(teacher_id = teacher.teacher_id, course_id = check_course.course_id)
+                db.add(new_workshop)
+                db.commit()
+                return check_course
+            else:
+                return check_course
         else:
             new_course = Course(course_name = course_name, course_sphere = course_sphere)
             db.add(new_course)
