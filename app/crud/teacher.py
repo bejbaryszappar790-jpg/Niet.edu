@@ -10,7 +10,7 @@ def get_teacher_by_email(db : Session, teacher_email : str):
     return result
 
 
-def get_teacher_for_exact_student(db : Session, student_id : int, course_id : int):
+def get_teachers_for_exact_student(db : Session, student_id : int, course_id : int):
     teacher = db.query(Teacher).join(Workshop, Workshop.teacher_id == Teacher.teacher_id).join(Enrollment, Enrollment.course_id == Workshop.course_id).filter(Enrollment.course_id == course_id, Enrollment.student_id == student_id, Workshop.course_id == course_id).distinct().all()
     return teacher
 

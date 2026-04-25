@@ -10,6 +10,7 @@ def get_courses_for_student(db : Session, student_id : int):
     courses = db.query(Course).join(Enrollment, Enrollment.course_id == Course.course_id).filter(Enrollment.student_id == student_id).distinct().all()
     return courses
 
+
 def get_courses_for_teacher(db: Session, teacher_id : int):
     courses = db.query(Course).join(Workshop, Workshop.course_id == Course.course_id).filter(Workshop.teacher_id == teacher_id).distinct().all()
     return courses
