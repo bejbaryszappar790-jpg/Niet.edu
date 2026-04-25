@@ -3,6 +3,7 @@ from pydantic import EmailStr
 from sqlalchemy.orm import Session
 from app.schemas.student import Student_Registration, Student_Output
 from app.schemas.teacher import Teacher_Output
+from app.schemas.courses import Output_Schema
 from app.crud.student import create_student, get_student_by_email
 from app.crud.teacher import get_teachers_for_exact_student, get_teacher, get_teacher_by_email
 from app.crud.course import get_courses_for_student
@@ -49,7 +50,7 @@ def show_teachers_to_student(student_id : int, course_id : int, db : Session = D
         raise HTTPException(status_code = 404, detail = "Teachers were not found!")
     
 
-@router.get("/my_courses")
+@router.get("/my_courses", response_model = list[Output_Schema])
 def show_courses_to_student(student_id : int, db : Session = Depends(get_db)):
     courses = get_courses_for_student(db = db, student_id = student_id)
     if courses:
