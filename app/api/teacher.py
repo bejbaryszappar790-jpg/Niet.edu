@@ -47,14 +47,14 @@ def show_students_to_teacher(teacher_id : int, course_id : int, db : Session = D
         raise HTTPException(status_code = 404, detail = "The students were not found!")
     
 
-@router.post("/new_course", response_model = list[Output_Schema])
+@router.post("/new_course", response_model = Output_Schema)
 def create_course_for_teacher(registration_data : Course_Registration, db : Session = Depends(get_db)):
     
     new_course = create_course(db = db, course_name = registration_data.course_name, course_sphere = registration_data.course_sphere, teacher_email = registration_data.teacher_email, teacher_password = registration_data.teacher_password)
     if new_course:
         return new_course
     else:
-        raise HTTPException(status_code = 404, detail = "The teacher was not found!")
+        raise HTTPException(status_code = 401, detail = "The teacher was not found!")
     
 @router.get("/teacher_courses", response_model = list[Output_Schema])
 def show_courses_to_teacher(teacher_id : int, db : Session = Depends(get_db)):

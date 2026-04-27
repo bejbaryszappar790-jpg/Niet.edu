@@ -20,13 +20,13 @@ def get_courses_for_teacher(db: Session, teacher_id : int):
 def create_course(db : Session, course_name : str, course_sphere : str, teacher_email : str, teacher_password : str):
     teacher = db.query(Teacher).filter(Teacher.teacher_email == teacher_email, Teacher.teacher_password == teacher_password).first()
     
-    if teacher != None:
+    if teacher:
         check_course = db.query(Course).filter(Course.course_name == course_name, Course.course_sphere == course_sphere).first()
         
-        if check_course != None:
+        if check_course:
             check_workshop = db.query(Workshop).filter(Workshop.course_id == check_course.course_id, Workshop.teacher_id == teacher.teacher_id).first()
             
-            if check_workshop == None:
+            if not check_workshop:
                 
                 new_workshop = Workshop(teacher_id = teacher.teacher_id, course_id = check_course.course_id)
                 db.add(new_workshop)
