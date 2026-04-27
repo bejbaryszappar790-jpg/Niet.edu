@@ -59,4 +59,3 @@ def show_courses_to_student(student_id : int, db : Session = Depends(get_db)):
         raise HTTPException(status_code = 404, detail = "Courses were not found!")
 
 
-

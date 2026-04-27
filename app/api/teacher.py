@@ -3,8 +3,10 @@ from pydantic import EmailStr
 from sqlalchemy.orm import Session
 from app.schemas.teacher import Teacher_Registration, Teacher_Output
 from app.schemas.student import  Student_Output
+from app.schemas.courses import Course_Registration, Output_Schema
 from app.crud.teacher import get_teacher_by_email, create_teacher
 from app.crud.student import get_student, get_student_by_email, get_students
+from app.crud.course import create_course, get_courses_for_teacher
 from app.database import get_db
 
 router = APIRouter(prefix = "/teachers", tags = ["Teachers"])
@@ -43,4 +45,23 @@ def show_students_to_teacher(teacher_id : int, course_id : int, db : Session = D
         return students
     else:
         raise HTTPException(status_code = 404, detail = "The students were not found!")
+    
+
+@router.post("/new_course", response_model = list[Output_Schema])
+def create_course_for_teacher(registration_data : Course_Registration, db : Session = Depends(get_db)):
+    
+    new_course = create_course(db = db, course_name = registration_data.course_name, course_sphere = registration_data.course_sphere, teacher_email = registration_data.teacher_email, teacher_password = registration_data.teacher_password)
+    if new_course:
+        return new_course
+    else:
+        raise HTTPException(status_code = 404, detail = "The teacher was not found!")
+    
+@router.get("/teacher_courses", response_model = list[Output_Schema])
+def show_courses_to_teacher(teacher_id : int, db : Session = Depends(get_db)):
+    courses = get_courses_for_teacher(db = db, teacher_id = teacher_id)
+    if courses:
+        return courses
+    else:
+        raise HTTPException(status_code = 404, detail = "Courses were not found!")  
+             
     
