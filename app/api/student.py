@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 from app.schemas.student import Student_Registration, Student_Output
 from app.schemas.teacher import Teacher_Output
 from app.schemas.courses import Output_Schema
+from app.schemas.video import Video_Output
 from app.crud.student import create_student, get_student_by_email
 from app.crud.teacher import get_teachers_for_exact_student, get_teacher, get_teacher_by_email
 from app.crud.course import get_courses_for_student
+from app.crud.video import get_all_videos_from_course
 from app.database import get_db
 
 router = APIRouter(prefix = "/students", tags = ["Students"])
@@ -59,3 +61,12 @@ def show_courses_to_student(student_id : int, db : Session = Depends(get_db)):
         raise HTTPException(status_code = 404, detail = "Courses were not found!")
 
 
+@router.get("/my_videos", response_model = list[Video_Output])
+def show_videos_to_student(student_id : int, course_id : int, teacher_id : int, db : Session = Depends(get_db)):
+    videos = get_all_videos_from_course(db = db, student_id = student_id, course_id = course_id, teacher_id = teacher_id)
+
+    if videos:
+        return videos
+    else:
+        raise HTTPException(status_code = 404, detail = "Videos were not found!")
+    

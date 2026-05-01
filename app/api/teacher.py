@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 from app.schemas.teacher import Teacher_Registration, Teacher_Output
 from app.schemas.student import  Student_Output
 from app.schemas.courses import Course_Registration, Output_Schema
+from app.schemas.video import Video_Upload, Video_Output
 from app.crud.teacher import get_teacher_by_email, create_teacher
 from app.crud.student import get_student, get_student_by_email, get_students
 from app.crud.course import create_course, get_courses_for_teacher
+from app.crud.video import upload_video, get_video_for_teacher
 from app.database import get_db
 
 router = APIRouter(prefix = "/teachers", tags = ["Teachers"])
@@ -64,4 +66,13 @@ def show_courses_to_teacher(teacher_id : int, db : Session = Depends(get_db)):
     else:
         raise HTTPException(status_code = 404, detail = "Courses were not found!")  
              
+@router.post("/teacher_video", response_model = Video_Output)
+def create_video_for_teacher(video_in : Video_Upload, db : Session = Depends(get_db)):
+    check_video = get_video_for_teacher(db = db, course_id = video_in.course_id, teacher_id = video_in.teacher_id, video_url = video_in.video_url)
+    if check_video:
+        return check_video
+    else:
+        new_video = upload_video(db = db, course_id = video_in.course_id, teacher_id = video_in.teacher_id, video_name = video_in.video_name, video_url = video_in.video_url, video_description = video_in.video_description, video_order_id = video_in.video_order_id)
+        return new_video
+    
     
