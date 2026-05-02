@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import EmailStr
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.schemas.teacher import Teacher_Registration, Teacher_Output
 from app.schemas.student import  Student_Output
 from app.schemas.courses import Course_Registration, Output_Schema
@@ -72,7 +73,9 @@ def create_video_for_teacher(video_in : Video_Upload, db : Session = Depends(get
     if check_video:
         return check_video
     else:
-        new_video = upload_video(db = db, course_id = video_in.course_id, teacher_id = video_in.teacher_id, video_name = video_in.video_name, video_url = video_in.video_url, video_description = video_in.video_description, video_order_id = video_in.video_order_id)
-        return new_video
-    
+        try:
+            new_video = upload_video(db = db, course_id = video_in.course_id, teacher_id = video_in.teacher_id, video_name = video_in.video_name, video_url = video_in.video_url, video_description = video_in.video_description, video_order_id = video_in.video_order_id, video_duration = video_in.video_duration, video_preview_url = video_in.video_preview_url)
+            return new_video
+        except IntegrityError:
+            raise HTTPException(status_code = 400, detail = "The order id is not available")
     

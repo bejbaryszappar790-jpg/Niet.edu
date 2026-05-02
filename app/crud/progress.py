@@ -7,6 +7,7 @@ def upload_progress(db : Session, video_id : int, student_id : int, last_positio
     
     if check_progress:
         check_progress.last_position = last_position
+
         db.commit()
         return check_progress
     else:

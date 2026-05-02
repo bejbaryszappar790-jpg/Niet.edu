@@ -52,6 +52,9 @@ class Video(Base):
     video_name = Column(String, nullable = False)
     video_description = Column(String)
     video_url = Column(String, nullable = False)
+    video_duration = Column(Integer, nullable = False)
+    video_preview_url = Column(String, nullable = False)
+    youtube_id = Column(String, nullable = False)
 
     __table_args__ = (UniqueConstraint("course_id", "teacher_id", "video_order_id", name = "video_course_teacher_uc"),)
     
