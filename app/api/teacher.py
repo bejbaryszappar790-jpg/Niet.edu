@@ -115,9 +115,11 @@ def create_video_for_teacher(video_in: Video_Upload, db: Session = Depends(get_d
                 video_url=video_in.video_url,
                 video_description=video_in.video_description,
                 video_order_id=video_in.video_order_id,
-                video_duration=video_in.video_duration,
-                video_preview_url=video_in.video_preview_url,
             )
+            
+            if not new_video:
+                raise HTTPException(status_code = 400, detail = "URL is not valid")
+            
             return new_video
         except IntegrityError:
             raise HTTPException(status_code=400, detail="The order id is not available")
