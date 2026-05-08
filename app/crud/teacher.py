@@ -35,6 +35,8 @@ def create_teacher(
     teacher_email: str,
     teacher_password: str,
 ):
+    
+
     new_teacher = Teacher(
         teacher_first_name=teacher_first_name,
         teacher_last_name=teacher_last_name,

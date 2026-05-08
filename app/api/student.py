@@ -5,13 +5,14 @@ from app.schemas.student import Student_Registration, Student_Output
 from app.schemas.teacher import Teacher_Output
 from app.schemas.courses import Output_Schema
 from app.schemas.video import Video_Output
+from app.schemas.enrollment import Enrollment_Input, Enrollment_Output
 from app.crud.student import create_student, get_student_by_email
 from app.crud.teacher import (
     get_teachers_for_exact_student,
     get_teacher,
     get_teacher_by_email,
 )
-from app.crud.course import get_courses_for_student
+from app.crud.course import get_courses_for_student, new_course_for_student
 from app.crud.video import get_all_videos_from_course
 from app.database import get_db
 
@@ -33,6 +34,16 @@ def register_student(student_in: Student_Registration, db: Session = Depends(get
             student_password=student_in.student_password,
         )
         return student
+
+
+@router.post("/course_enrollment", response_model = Enrollment_Output)
+def enroll_to_course(enroll_in : Enrollment_Input, db : Session = Depends(get_db)):
+    new_enrollment = new_course_for_student(db = db, student_id = enroll_in.student_id, teacher_id = enroll_in.teacher_id, course_id = enroll_in.course_id)
+
+    if not new_enrollment:
+        raise HTTPException(status_code = 400, detail = "Data were invalid!!!")
+    
+    return new_enrollment
 
 
 @router.get("/my_teacher", response_model=Teacher_Output)

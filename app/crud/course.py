@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models import Course, Enrollment, Workshop, Teacher
+from app.models import Course, Enrollment, Workshop, Teacher, Student
 
 
 def get_course(db: Session, course_id: int):
@@ -27,6 +27,59 @@ def get_courses_for_teacher(db: Session, teacher_id: int):
         .all()
     )
     return courses
+
+
+def new_course_for_student(db: Session, student_id : int, course_id : int, teacher_id : int):
+    check_student = db.query(Student).filter(Student.student_id == student_id).first()
+    check_course = db.query(Course).filter(Course.course_id == course_id).first()
+    check_teacher = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
+
+    if check_student and check_course and check_teacher:
+        check_enrollment = db.query(Enrollment).filter(Enrollment.student_id  == student_id, Enrollment.teacher_id == teacher_id, Enrollment.course_id == course_id).first()
+        if check_enrollment:
+            
+            checked_enrollment_for_user = db.query(
+                Enrollment.course_id, 
+                Enrollment.teacher_id,
+                Enrollment.student_id,
+                Course.course_name,
+                Course.course_sphere,
+                Teacher.teacher_first_name,
+                Teacher.teacher_last_name
+            ).join(Course, Enrollment.course_id == Course.course_id)\
+             .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)\
+             .filter(
+                 Enrollment.student_id == student_id, 
+                 Enrollment.course_id == course_id, 
+                 Enrollment.teacher_id == teacher_id
+                 )\
+             .first()
+            return checked_enrollment_for_user
+    
+        new_enrollment = Enrollment(student_id = student_id, course_id = course_id, teacher_id = teacher_id)
+        db.add(new_enrollment)
+        db.commit()
+        db.refresh(new_enrollment)
+
+        enrollment_for_user = db.query(
+            Enrollment.course_id, 
+            Enrollment.teacher_id, 
+            Enrollment.student_id, 
+            Course.course_name, 
+            Course.course_sphere, 
+            Teacher.teacher_first_name, 
+            Teacher.teacher_last_name
+            ).join(Course, Enrollment.course_id == Course.course_id)\
+             .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)\
+             .filter(
+                 Enrollment.course_id == course_id, 
+                 Enrollment.student_id == student_id, 
+                 Enrollment.teacher_id == teacher_id
+                 )\
+            .first()
+
+        
+        return enrollment_for_user
 
 
 def create_course(
