@@ -5,16 +5,15 @@ from datetime import datetime
 class Progress_Base(BaseModel):
     student_id: int
     video_id: int
-    watched_on: datetime | None
-    is_watched: bool
-
+    last_position : int
 
 class Progress_Input(Progress_Base):
-    last_position: int
+    pass
 
 
 class Progress_Output(Progress_Base):
-
+    progress_id : int
+    watched_on: datetime
+    is_watched: bool
     class Config:
-        progress_id: int
         from_attributes = True

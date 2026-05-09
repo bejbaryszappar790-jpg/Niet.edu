@@ -6,6 +6,7 @@ from app.schemas.teacher import Teacher_Output
 from app.schemas.courses import Output_Schema
 from app.schemas.video import Video_Output
 from app.schemas.enrollment import Enrollment_Input, Enrollment_Output
+from app.schemas.progress import Progress_Input, Progress_Output
 from app.crud.student import create_student, get_student_by_email
 from app.crud.teacher import (
     get_teachers_for_exact_student,
@@ -14,6 +15,7 @@ from app.crud.teacher import (
 )
 from app.crud.course import get_courses_for_student, new_course_for_student
 from app.crud.video import get_all_videos_from_course
+from app.crud.progress import upload_progress
 from app.database import get_db
 
 router = APIRouter(prefix="/students", tags=["Students"])
@@ -100,3 +102,12 @@ def show_videos_to_student(
         return videos
     else:
         raise HTTPException(status_code=404, detail="Videos were not found!")
+    
+@router.post("/into_video", response_model = Progress_Output)
+def work_with_progress(progress_in : Progress_Input, db : Session = Depends(get_db)):
+    result = upload_progress(db = db, student_id = progress_in.student_id, video_id = progress_in.video_id, last_position = progress_in.last_position)
+    
+    if result:
+        return result
+    
+    raise HTTPException(status_code = 404, detail = "The video was not found!!!")

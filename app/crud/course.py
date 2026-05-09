@@ -9,8 +9,9 @@ def get_course(db: Session, course_id: int):
 
 def get_courses_for_student(db: Session, student_id: int):
     courses = (
-        db.query(Course)
-        .join(Enrollment, Enrollment.course_id == Course.course_id)
+        db.query(Course.course_id, Course.course_name, Teacher.teacher_first_name, Teacher.teacher_last_name, Teacher.teacher_id)
+        .join(Course, Enrollment.course_id == Course.course_id)
+        .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)
         .filter(Enrollment.student_id == student_id)
         .distinct()
         .all()
@@ -35,7 +36,12 @@ def new_course_for_student(db: Session, student_id : int, course_id : int, teach
     check_teacher = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
 
     if check_student and check_course and check_teacher:
-        check_enrollment = db.query(Enrollment).filter(Enrollment.student_id  == student_id, Enrollment.teacher_id == teacher_id, Enrollment.course_id == course_id).first()
+        check_enrollment = db.query(Enrollment)\
+            .filter(
+                Enrollment.student_id  == student_id, 
+                Enrollment.teacher_id == teacher_id, 
+                Enrollment.course_id == course_id)\
+            .first()
         if check_enrollment:
             
             checked_enrollment_for_user = db.query(

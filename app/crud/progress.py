@@ -1,27 +1,39 @@
 from sqlalchemy.orm import Session
-from app.models import Progress
+from app.models import Progress, Video
 
 
 def upload_progress(db: Session, video_id: int, student_id: int, last_position: int):
-    check_progress = (
-        db.query(Progress)
-        .filter(Progress.video_id == video_id, Progress.student_id == student_id)
-        .first()
-    )
+    temp_video = db.query(Video).filter(Video.video_id == video_id ).first()
 
-    if check_progress:
-        check_progress.last_position = last_position
-
-        db.commit()
-        return check_progress
-    else:
-        new_progress = Progress(
-            video_id=video_id,
-            student_id=student_id,
-            is_watched=False,
-            last_position=last_position,
+    
+    if temp_video:
+        progress = (
+            db.query(Progress)
+            .filter(Progress.video_id == video_id, Progress.student_id == student_id)
+            .first()
         )
-        db.add(new_progress)
+
+
+        check_is_watched = last_position >= int(temp_video.video_duration * 0.95)
+
+        if progress:
+            progress.last_position = last_position
+
+            if check_is_watched:
+                progress.is_watched = True
+    
+        else:
+         
+         
+            progress = Progress(
+                video_id=video_id,
+                student_id=student_id,
+                is_watched=check_is_watched,
+                last_position=last_position,
+            )
+            db.add(progress)
+    
+    
         db.commit()
-        db.refresh(new_progress)
-        return new_progress
+        db.refresh(progress)
+        return progress
