@@ -3,7 +3,6 @@ from pydantic import EmailStr
 from sqlalchemy.orm import Session
 from app.schemas.student import Student_Registration, Student_Output
 from app.schemas.teacher import Teacher_Output
-from app.schemas.courses import Output_Schema
 from app.schemas.video import Video_Output
 from app.schemas.enrollment import Enrollment_Input, Enrollment_Output
 from app.schemas.progress import Progress_Input, Progress_Output
@@ -81,7 +80,7 @@ def show_teachers_to_student(
         raise HTTPException(status_code=404, detail="Teachers were not found!")
 
 
-@router.get("/my_courses", response_model=list[Output_Schema])
+@router.get("/my_courses", response_model=list[Enrollment_Output])
 def show_courses_to_student(student_id: int, db: Session = Depends(get_db)):
     courses = get_courses_for_student(db=db, student_id=student_id)
     if courses:

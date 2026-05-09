@@ -9,7 +9,14 @@ def get_course(db: Session, course_id: int):
 
 def get_courses_for_student(db: Session, student_id: int):
     courses = (
-        db.query(Course.course_id, Course.course_name, Teacher.teacher_first_name, Teacher.teacher_last_name, Teacher.teacher_id)
+        db.query(
+            Course.course_id, 
+            Course.course_name, 
+            Teacher.teacher_first_name,
+            Teacher.teacher_last_name, 
+            Teacher.teacher_id
+            )
+        .select_from(Enrollment)
         .join(Course, Enrollment.course_id == Course.course_id)
         .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)
         .filter(Enrollment.student_id == student_id)
