@@ -12,6 +12,7 @@ def get_courses_for_student(db: Session, student_id: int):
         db.query(
             Course.course_id, 
             Course.course_name, 
+            Course.course_sphere,
             Teacher.teacher_first_name,
             Teacher.teacher_last_name, 
             Teacher.teacher_id
