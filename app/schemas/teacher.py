@@ -8,7 +8,7 @@ class Teacher_Base(BaseModel):
 
 class Teacher_Registration(Teacher_Base):
     teacher_email: EmailStr 
-    teacher_password: str = Field(..., min_length = 8)
+    teacher_hashed_password: str = Field(..., min_length = 8)
 
 
 class Teacher_Output(Teacher_Base):

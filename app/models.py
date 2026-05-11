@@ -17,7 +17,7 @@ class Student(Base):
     student_first_name = Column(String, nullable=False)
     student_last_name = Column(String, nullable=False)
     student_email = Column(String, unique=True, index=True, nullable=False)
-    student_password = Column(String, nullable=False)
+    student_hashed_password = Column(String, nullable=False)
 
 
 class Teacher(Base):
@@ -26,7 +26,7 @@ class Teacher(Base):
     teacher_first_name = Column(String, nullable=False)
     teacher_last_name = Column(String, nullable=False)
     teacher_email = Column(String, unique=True, nullable=False)
-    teacher_password = Column(String, nullable=False)
+    teacher_hashed_password = Column(String, nullable=False)
 
 
 class Course(Base):
