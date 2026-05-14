@@ -31,7 +31,7 @@ def create_student(
     student_first_name: str,
     student_last_name: str,
     student_email: str,
-    student_hashed_password: str,
+    student_password: str,
 ):
     
     
@@ -39,7 +39,7 @@ def create_student(
         student_first_name=student_first_name,
         student_last_name=student_last_name,
         student_email=student_email,
-        student_hashed_password= get_password_hash(student_hashed_password),
+        student_hashed_password= get_password_hash(student_password),
     )
     db.add(new_student)
     db.commit()
@@ -48,9 +48,9 @@ def create_student(
 
 
 def login_existing_student(db : Session, student_email : str, student_plain_password : str):
-    existing_student = db.query(Student).filter(Student.student_email == student_email).filter()
+    existing_student = db.query(Student).filter(Student.student_email == student_email).first()
     
-
-    result_of_verifying = verify_password(student_plain_password, existing_student.student_hashed_password)
-    if existing_student and result_of_verifying:
-        return existing_student
+    if existing_student:
+        result_of_verifying = verify_password(student_plain_password, existing_student.student_hashed_password)
+        if result_of_verifying:
+            return existing_student

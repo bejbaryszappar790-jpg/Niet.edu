@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from app.models import Teacher, Enrollment, Workshop
-from app.core.security import verify_password
+from app.core.security import verify_password, get_password_hash
 
 
 def get_teacher(db: Session, teacher_id: int):
@@ -37,12 +37,12 @@ def create_teacher(
     teacher_password: str,
 ):
     
-
+    
     new_teacher = Teacher(
         teacher_first_name=teacher_first_name,
         teacher_last_name=teacher_last_name,
         teacher_email=teacher_email,
-        teacher_hashed_password=teacher_password,
+        teacher_hashed_password=get_password_hash(teacher_password),
     )
     db.add(new_teacher)
     db.commit()
@@ -51,9 +51,11 @@ def create_teacher(
 
 
 def login_existing_teacher(db : Session, teacher_email : str, teacher_plain_password : str):
-    existing_teacher = db.query(Teacher).filter(teacher_email == teacher_email).first()
+    existing_teacher = db.query(Teacher).filter(Teacher.teacher_email == teacher_email).first()
 
-    result_of_verifying = verify_password(teacher_plain_password, existing_teacher.teacher_hashed_password)
-    if existing_teacher and result_of_verifying:
-        return existing_teacher
+    
+    if existing_teacher:
+        result_of_verifying = verify_password(teacher_plain_password, existing_teacher.teacher_hashed_password)
+        if result_of_verifying:
+            return existing_teacher
         

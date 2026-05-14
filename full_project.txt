@@ -1,0 +1,1074 @@
+-e \n--- FILE: app/core/security.py ---
+from jose import (
+    jwt,
+    JWTError,
+)
+from passlib.context import CryptContext
+from datetime import (
+    datetime,
+    timedelta,
+    timezone
+)
+from dotenv import load_dotenv
+import os
+from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.crud.student import get_student
+from app.crud.teacher import get_teacher
+from app.database import get_db
+
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+ACCES_TIME = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+pwd_context = CryptContext(schemes = ["bcrypt"], deprecated = "auto")
+
+def get_password_hash(password : str):
+    hashed_password = pwd_context.hash(password)
+    return hashed_password
+
+def verify_password(plain_password : str, hashed_password : str):
+    result_of_checking = pwd_context.verify(plain_password, hashed_password)
+    return result_of_checking
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.UTC) + timedelta(minutes = ACCES_TIME)
+    to_encode.update({"exp" : expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm = ALGORITHM)
+    return encoded_jwt
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="students/student_login")
+
+def get_current_user(token : str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms = [ALGORITHM])
+
+        user_id = int(payload.get("sub"))
+        
+        if user_id is None:
+            raise HTTPException(status_code = 401, detail = "Could not validate credentials")
+
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
+    
+
+
+def get_current_student(student_id : int = Depends(get_current_user), db : Session = Depends(get_db)):
+    check_student = get_student(db = db, student_id = student_id)
+
+    if check_student:
+        return check_student
+    
+    raise HTTPException(status_code = 403, detail = "Teacher is not allowed to use student's service for")
+
+def get_current_teacher(teacher_id : int = Depends(get_current_user), db : Session = Depends(get_db)):
+    check_teacher = get_teacher(db = db, teacher_id = teacher_id)
+    
+    if check_teacher:
+        return check_teacher
+    
+    raise HTTPException(status_code = 403, detail = "Student is not allowed to use teacher's service for")-e \n--- FILE: app/models.py ---
+from app.database import Base
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Boolean,
+    ForeignKey,
+    DateTime,
+    UniqueConstraint,
+)
+from sqlalchemy.sql import func
+
+
+class Student(Base):
+    __tablename__ = "Student"
+    student_id = Column(Integer, primary_key=True, index=True)
+    student_first_name = Column(String, nullable=False)
+    student_last_name = Column(String, nullable=False)
+    student_email = Column(String, unique=True, index=True, nullable=False)
+    student_hashed_password = Column(String, nullable=False)
+
+
+class Teacher(Base):
+    __tablename__ = "Teacher"
+    teacher_id = Column(Integer, primary_key=True, index=True)
+    teacher_first_name = Column(String, nullable=False)
+    teacher_last_name = Column(String, nullable=False)
+    teacher_email = Column(String, unique=True, nullable=False)
+    teacher_hashed_password = Column(String, nullable=False)
+
+
+class Course(Base):
+    __tablename__ = "Course"
+    course_id = Column(Integer, primary_key=True, index=True)
+    course_name = Column(String, nullable=False)
+    course_sphere = Column(String, nullable=False)
+
+
+class Enrollment(Base):
+    __tablename__ = "Enrollment"
+    enrollment_id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(
+        Integer, ForeignKey("Student.student_id"), nullable=False, index=True
+    )
+    course_id = Column(
+        Integer, ForeignKey("Course.course_id"), nullable=False, index=True
+    )
+    teacher_id = Column(
+        Integer, ForeignKey("Teacher.teacher_id"), nullable=False, index=True
+    )
+    enrolled_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Workshop(Base):
+    __tablename__ = "Workshop"
+    workshop_id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(
+        Integer, ForeignKey("Course.course_id"), nullable=False, index=True
+    )
+    teacher_id = Column(
+        Integer, ForeignKey("Teacher.teacher_id"), nullable=False, index=True
+    )
+    workshop_date = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Video(Base):
+    __tablename__ = "Video"
+    video_id = Column(Integer, primary_key=True)
+    course_id = Column(
+        Integer, ForeignKey("Course.course_id"), nullable=False, index=True
+    )
+    teacher_id = Column(
+        Integer, ForeignKey("Teacher.teacher_id"), nullable=False, index=True
+    )
+    video_order_id = Column(Integer, nullable=False, index=True)
+    video_name = Column(String, nullable=False)
+    video_description = Column(String)
+    video_url = Column(String, nullable=False)
+    video_duration = Column(Integer, nullable=False)
+    video_preview_url = Column(String, nullable=False)
+    youtube_id = Column(String, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "course_id", "teacher_id", "video_order_id", name="video_course_teacher_uc"
+        ),
+    )
+
+
+class Progress(Base):
+    __tablename__ = "Progress"
+    progress_id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(
+        Integer, ForeignKey("Student.student_id"), nullable=False, index=True
+    )
+    video_id = Column(Integer, ForeignKey("Video.video_id"), nullable=False, index=True)
+    is_watched = Column(Boolean, default=False)
+    watched_on = Column(DateTime(timezone=True), server_default=func.now())
+    last_position = Column(Integer, default=0, nullable=False)
+-e \n--- FILE: app/database.py ---
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+-e \n--- FILE: app/utils/youtube.py ---
+import re
+import requests
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def parsing_youtube_url(url: str):
+    pattern = r"[a-zA-Z0-9_-]{11}"
+
+    result = re.search(pattern, url)
+
+    if result:
+        return result.group()
+    else:
+        return None
+
+
+def get_youtube_metadata(url: str):
+    result_of_parsing = parsing_youtube_url(url)
+
+    if not result_of_parsing:
+        return {"error": "Invalid URL"}
+
+    API_KEY = os.getenv("GOOGLE_CONSOLE_API_KEY")
+
+    api_url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id={result_of_parsing}&key={API_KEY}"
+    response = requests.get(api_url)
+    data = response.json()
+    if not data.get("items"):
+        return {"error": "Video not found in YouTube"}
+    return data
+-e \n--- FILE: app/schemas/token.py ---
+from pydantic import BaseModel
+
+
+class Token_Base(BaseModel):
+    access_token: str
+    token_type : str-e \n--- FILE: app/schemas/teacher.py ---
+from pydantic import BaseModel, EmailStr, Field
+
+
+class Teacher_Base(BaseModel):
+    teacher_first_name: str = Field(..., min_length = 1, max_length = 50)
+    teacher_last_name: str = Field(..., min_length = 1, max_length = 50)
+
+
+class Teacher_Registration(Teacher_Base):
+    teacher_email: EmailStr 
+    teacher_hashed_password: str = Field(..., min_length = 8)
+
+
+class Teacher_Output(Teacher_Base):
+    teacher_id: int
+
+    class Config:
+        from_attributes = True
+-e \n--- FILE: app/schemas/enrollment.py ---
+from pydantic import BaseModel
+
+
+class Enrollment_Base(BaseModel):
+    course_id : int
+    teacher_id : int
+
+
+class Enrollment_Input(Enrollment_Base):
+    pass
+    
+
+class Enrollment_Output(Enrollment_Base):
+    teacher_first_name : str
+    teacher_last_name : str
+    course_name : str
+    course_sphere : str
+    class Config:
+        from_attributes = True-e \n--- FILE: app/schemas/courses.py ---
+from pydantic import BaseModel, EmailStr, Field
+
+
+class Course_Base(BaseModel):
+    course_name: str = Field(..., min_length = 1, max_length = 50)
+    course_sphere: str = Field(..., min_length = 1, max_length = 50)
+
+
+class Course_Registration(Course_Base):
+    teacher_email: EmailStr
+    teacher_password: str = Field(..., min_length = 8)
+
+
+class Output_Schema(Course_Base):
+    course_id: int
+
+    class Config:
+        from_attributes = True
+-e \n--- FILE: app/schemas/student.py ---
+from pydantic import BaseModel, EmailStr, Field
+
+
+class Student_Base(BaseModel):
+    student_first_name: str = Field(..., min_length = 1, max_length = 50)
+    student_last_name: str = Field(..., min_length = 1, max_length = 50)
+
+
+class Student_Registration(Student_Base):
+    student_email: EmailStr
+    student_hashed_password: str = Field(..., min_length = 8)
+
+
+class Student_Output(Student_Base):
+    student_id: int
+
+    class Config:
+        from_attributes = True
+-e \n--- FILE: app/schemas/progress.py ---
+from pydantic import BaseModel
+from datetime import datetime
+
+
+class Progress_Base(BaseModel):
+    video_id: int
+    last_position : int
+
+class Progress_Input(Progress_Base):
+    pass
+
+
+class Progress_Output(Progress_Base):
+    progress_id : int
+    watched_on: datetime
+    is_watched: bool
+    class Config:
+        from_attributes = True
+-e \n--- FILE: app/schemas/video.py ---
+from pydantic import BaseModel
+
+
+class Video_Base(BaseModel):
+    video_name: str | None
+    video_url: str
+    course_id: int
+    video_order_id: int
+    video_description: str | None
+
+
+class Video_Upload(Video_Base):
+    pass
+
+
+class Video_Output(Video_Base):
+    video_id: int
+    youtube_id: str
+    video_duration: int
+    video_preview_url: str | None
+    teacher_id : int
+    class Config:
+        from_attributes = True
+-e \n--- FILE: app/crud/teacher.py ---
+from sqlalchemy.orm import Session
+from app.models import Teacher, Enrollment, Workshop
+from app.core.security import verify_password
+
+
+def get_teacher(db: Session, teacher_id: int):
+    result = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
+    return result
+
+
+def get_teacher_by_email(db: Session, teacher_email: str):
+    result = db.query(Teacher).filter(Teacher.teacher_email == teacher_email).first()
+    return result
+
+
+def get_teachers_for_exact_student(db: Session, student_id: int, course_id: int):
+    teacher = (
+        db.query(Teacher)
+        .join(Workshop, Workshop.teacher_id == Teacher.teacher_id)
+        .join(Enrollment, Enrollment.course_id == Workshop.course_id)
+        .filter(
+            Enrollment.course_id == course_id,
+            Enrollment.student_id == student_id,
+            Workshop.course_id == course_id,
+        )
+        .distinct()
+        .all()
+    )
+    return teacher
+
+
+def create_teacher(
+    db: Session,
+    teacher_first_name: str,
+    teacher_last_name: str,
+    teacher_email: str,
+    teacher_password: str,
+):
+    
+
+    new_teacher = Teacher(
+        teacher_first_name=teacher_first_name,
+        teacher_last_name=teacher_last_name,
+        teacher_email=teacher_email,
+        teacher_hashed_password=teacher_password,
+    )
+    db.add(new_teacher)
+    db.commit()
+    db.refresh(new_teacher)
+    return new_teacher
+
+
+def login_existing_teacher(db : Session, teacher_email : str, teacher_plain_password : str):
+    existing_teacher = db.query(Teacher).filter(teacher_email == teacher_email).first()
+
+    result_of_verifying = verify_password(teacher_plain_password, existing_teacher.teacher_hashed_password)
+    if existing_teacher and result_of_verifying:
+        return existing_teacher
+        
+-e \n--- FILE: app/crud/course.py ---
+from sqlalchemy.orm import Session
+from app.models import Course, Enrollment, Workshop, Teacher, Student
+
+
+def get_course(db: Session, course_id: int):
+    result = db.query(Course).filter(Course.course_id == course_id).first()
+    return result
+
+
+def get_courses_for_student(db: Session, student_id: int):
+    courses = (
+        db.query(
+            Course.course_id, 
+            Course.course_name, 
+            Course.course_sphere,
+            Teacher.teacher_first_name,
+            Teacher.teacher_last_name, 
+            Teacher.teacher_id
+            )
+        .select_from(Enrollment)
+        .join(Course, Enrollment.course_id == Course.course_id)
+        .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)
+        .filter(Enrollment.student_id == student_id)
+        .distinct()
+        .all()
+    )
+    return courses
+
+
+def get_courses_for_teacher(db: Session, teacher_id: int):
+    courses = (
+        db.query(Course)
+        .join(Workshop, Workshop.course_id == Course.course_id)
+        .filter(Workshop.teacher_id == teacher_id)
+        .distinct()
+        .all()
+    )
+    return courses
+
+
+def new_course_for_student(db: Session, student_id : int, course_id : int, teacher_id : int):
+    check_student = db.query(Student).filter(Student.student_id == student_id).first()
+    check_course = db.query(Course).filter(Course.course_id == course_id).first()
+    check_teacher = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
+
+    if check_student and check_course and check_teacher:
+        check_enrollment = db.query(Enrollment)\
+            .filter(
+                Enrollment.student_id  == student_id, 
+                Enrollment.teacher_id == teacher_id, 
+                Enrollment.course_id == course_id)\
+            .first()
+        if check_enrollment:
+            
+            checked_enrollment_for_user = db.query(
+                Enrollment.course_id, 
+                Enrollment.teacher_id,
+                Enrollment.student_id,
+                Course.course_name,
+                Course.course_sphere,
+                Teacher.teacher_first_name,
+                Teacher.teacher_last_name
+            ).join(Course, Enrollment.course_id == Course.course_id)\
+             .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)\
+             .filter(
+                 Enrollment.student_id == student_id, 
+                 Enrollment.course_id == course_id, 
+                 Enrollment.teacher_id == teacher_id
+                 )\
+             .first()
+            return checked_enrollment_for_user
+    
+        new_enrollment = Enrollment(student_id = student_id, course_id = course_id, teacher_id = teacher_id)
+        db.add(new_enrollment)
+        db.commit()
+        db.refresh(new_enrollment)
+
+        enrollment_for_user = db.query(
+            Enrollment.course_id, 
+            Enrollment.teacher_id, 
+            Enrollment.student_id, 
+            Course.course_name, 
+            Course.course_sphere, 
+            Teacher.teacher_first_name, 
+            Teacher.teacher_last_name
+            ).join(Course, Enrollment.course_id == Course.course_id)\
+             .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)\
+             .filter(
+                 Enrollment.course_id == course_id, 
+                 Enrollment.student_id == student_id, 
+                 Enrollment.teacher_id == teacher_id
+                 )\
+            .first()
+
+        
+        return enrollment_for_user
+
+
+def create_course(
+    db: Session,
+    course_name: str,
+    course_sphere: str,
+    teacher_email: str,
+    teacher_password: str,
+):
+    teacher = (
+        db.query(Teacher)
+        .filter(
+            Teacher.teacher_email == teacher_email,
+            Teacher.teacher_password == teacher_password,
+        )
+        .first()
+    )
+
+    if teacher:
+        check_course = (
+            db.query(Course)
+            .filter(
+                Course.course_name == course_name, Course.course_sphere == course_sphere
+            )
+            .first()
+        )
+
+        if check_course:
+            check_workshop = (
+                db.query(Workshop)
+                .filter(
+                    Workshop.course_id == check_course.course_id,
+                    Workshop.teacher_id == teacher.teacher_id,
+                )
+                .first()
+            )
+
+            if not check_workshop:
+
+                new_workshop = Workshop(
+                    teacher_id=teacher.teacher_id, course_id=check_course.course_id
+                )
+                db.add(new_workshop)
+                db.commit()
+                return check_course
+            else:
+                return check_course
+        else:
+            new_course = Course(course_name=course_name, course_sphere=course_sphere)
+            db.add(new_course)
+            db.commit()
+            db.refresh(new_course)
+
+            new_workshop = Workshop(
+                teacher_id=teacher.teacher_id, course_id=new_course.course_id
+            )
+            db.add(new_workshop)
+            db.commit()
+            return new_course
+-e \n--- FILE: app/crud/student.py ---
+from sqlalchemy.orm import Session
+from app.models import Student, Workshop, Enrollment
+from app.core.security import get_password_hash, verify_password
+
+
+def get_student(db: Session, student_id: int):
+
+    result = db.query(Student).filter(Student.student_id == student_id).first()
+    return result
+
+
+def get_student_by_email(db: Session, student_email: str):
+    result = db.query(Student).filter(Student.student_email == student_email).first()
+    return result
+
+
+def get_students(db: Session, teacher_id: int, course_id: int):
+    students = (
+        db.query(Student)
+        .join(Enrollment, Enrollment.student_id == Student.student_id)
+        .join(Workshop, Enrollment.course_id == Workshop.course_id)
+        .filter(Workshop.teacher_id == teacher_id, Workshop.course_id == course_id)
+        .distinct()
+        .all()
+    )
+    return students
+
+
+def create_student(
+    db: Session,
+    student_first_name: str,
+    student_last_name: str,
+    student_email: str,
+    student_hashed_password: str,
+):
+    
+    
+    new_student = Student(
+        student_first_name=student_first_name,
+        student_last_name=student_last_name,
+        student_email=student_email,
+        student_hashed_password= get_password_hash(student_hashed_password),
+    )
+    db.add(new_student)
+    db.commit()
+    db.refresh(new_student)
+    return new_student
+
+
+def login_existing_student(db : Session, student_email : str, student_plain_password : str):
+    existing_student = db.query(Student).filter(Student.student_email == student_email).filter()
+    
+
+    result_of_verifying = verify_password(student_plain_password, existing_student.student_hashed_password)
+    if existing_student and result_of_verifying:
+        return existing_student-e \n--- FILE: app/crud/progress.py ---
+from sqlalchemy.orm import Session
+from app.models import Progress, Video
+
+
+def upload_progress(db: Session, video_id: int, student_id: int, last_position: int):
+    temp_video = db.query(Video).filter(Video.video_id == video_id ).first()
+
+    
+    if temp_video:
+        progress = (
+            db.query(Progress)
+            .filter(Progress.video_id == video_id, Progress.student_id == student_id)
+            .first()
+        )
+
+
+        check_is_watched = last_position >= int(temp_video.video_duration * 0.95)
+
+        if progress:
+            progress.last_position = last_position
+
+            if check_is_watched:
+                progress.is_watched = True
+    
+        else:
+         
+         
+            progress = Progress(
+                video_id=video_id,
+                student_id=student_id,
+                is_watched=check_is_watched,
+                last_position=last_position,
+            )
+            db.add(progress)
+    
+    
+        db.commit()
+        db.refresh(progress)
+        return progress
+-e \n--- FILE: app/crud/video.py ---
+from sqlalchemy.orm import Session
+from app.models import Video, Enrollment
+from app.utils.youtube import get_youtube_metadata, parsing_youtube_url
+from  isodate import parse_duration
+
+
+
+def upload_video(
+    db: Session,
+    course_id: int,
+    teacher_id: int,
+    video_url: str,
+    video_description: str | None,
+    video_order_id: int,
+    video_name: str | None
+):
+    check_video = (
+        db.query(Video)
+        .filter(
+            Video.course_id == course_id,
+            Video.teacher_id == teacher_id,
+            Video.video_url == video_url,
+        )
+        .first()
+    )
+
+
+    if check_video:
+        return check_video
+    else:
+
+        result = get_youtube_metadata(video_url)
+        youtube_id = parsing_youtube_url(video_url)
+        if "error" not in result:
+            if not video_name: 
+                video_name = result['items'][0]['snippet']['title']
+        
+            if not video_description:
+                video_description = result['items'][0]['snippet']['description']
+            video_preview_url = result['items'][0]['snippet']['thumbnails']['high']['url']
+            parsed_time = parse_duration(result['items'][0]['contentDetails']['duration'])
+            video_duration = int(parsed_time.total_seconds())
+        
+        
+            new_video = Video(
+                teacher_id=teacher_id,
+                course_id=course_id,
+                video_name=video_name,
+                video_url=video_url,
+                video_order_id=video_order_id,
+                video_description=video_description,
+                video_duration=video_duration,
+                video_preview_url=video_preview_url,
+                youtube_id = youtube_id
+            )
+            db.add(new_video)
+            db.commit()
+            db.refresh(new_video)
+            return new_video
+
+
+def get_all_videos_from_course(
+    db: Session, student_id: int, course_id: int, teacher_id: int
+):
+    check_student = (
+        db.query(Enrollment)
+        .filter(
+            Enrollment.course_id == course_id,
+            Enrollment.student_id == student_id,
+            Enrollment.teacher_id == teacher_id,
+        )
+        .first()
+    )
+    if check_student:
+        videos = (
+            db.query(Video)
+            .filter(Video.course_id == course_id, Video.teacher_id == teacher_id)
+            .order_by(Video.video_order_id)
+            .distinct()
+            .all()
+        )
+        if videos:
+            return videos
+
+    return []
+
+
+def get_video_for_teacher(db: Session, course_id: int, teacher_id: int, video_url: str):
+    video = (
+        db.query(Video)
+        .filter(
+            Video.course_id == course_id,
+            Video.teacher_id == teacher_id,
+            Video.video_url == video_url,
+        )
+        .first()
+    )
+    if video:
+        return video
+-e \n--- FILE: app/api/teacher.py ---
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import EmailStr
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from app.schemas.teacher import Teacher_Registration, Teacher_Output
+from app.schemas.student import Student_Output
+from app.schemas.courses import Course_Registration, Output_Schema
+from app.schemas.video import Video_Upload, Video_Output
+from app.schemas.token import Token_Base
+from app.crud.teacher import get_teacher_by_email, create_teacher, login_existing_teacher
+from app.crud.student import get_student, get_student_by_email, get_students
+from app.crud.course import create_course, get_courses_for_teacher
+from app.crud.video import upload_video, get_video_for_teacher
+from app.core.security import create_access_token, get_current_teacher
+from app.database import get_db
+
+router = APIRouter(prefix="/teachers", tags=["Teachers"])
+
+
+@router.post("/create_teacher", response_model=Teacher_Output)
+def register_teacher(teacher_in: Teacher_Registration, db: Session = Depends(get_db)):
+    check_teacher_email = get_teacher_by_email(
+        db=db, teacher_email=teacher_in.teacher_email
+    )
+    if check_teacher_email:
+        raise HTTPException(status_code=400, detail="Teacher already exists!")
+    else:
+        result = create_teacher(
+            db=db,
+            teacher_first_name=teacher_in.teacher_first_name,
+            teacher_last_name=teacher_in.teacher_last_name,
+            teacher_email=teacher_in.teacher_email,
+            teacher_password=teacher_in.teacher_password,
+        )
+        return result
+
+
+
+@router.post("/teacher_login", response_model = Token_Base)
+def teacher_sign_in(teacher_email : str, teacher_plain_password : str, db : Session = Depends(get_db)):
+    check_teacher = get_teacher_by_email(db = db, teacher_email = teacher_email)
+    
+    if check_teacher:
+        result_of_login = login_existing_teacher(db = db, teacher_email = teacher_email, teacher_plain_password = teacher_plain_password)
+        
+        if result_of_login:
+            data = {"sub" : str(result_of_login.teacher_id)}
+            access_token = create_access_token(data)
+
+            result = {"access_token" : access_token, "token_type" : "bearer"}
+            return result 
+        raise HTTPException(status_code = 400, detail = "Email or password is invalid")
+    raise HTTPException(status_code = 404, detail = "Teacher was not found")
+        
+    
+
+@router.get("/get_student", response_model=Student_Output)
+def show_student_to_teacher(student_id: int, db: Session = Depends(get_db)):
+    student = get_student(db=db, student_id=student_id)
+    if student:
+        return student
+    else:
+        raise HTTPException(
+            status_code=404, detail="There is no such student with this id!"
+        )
+
+
+@router.get("/get_student_by_email", response_model=Student_Output)
+def show_student_to_teacher_by_email(
+    student_email: EmailStr, db: Session = Depends(get_db)
+):
+    student = get_student_by_email(db=db, student_email=student_email)
+    if student:
+        return student
+    else:
+        raise HTTPException(
+            status_code=404, detail="There is no such student with this email"
+        )
+
+
+@router.get("/get_students", response_model=list[Student_Output])
+def show_students_to_teacher(
+    course_id: int, current_teacher: int = Depends(get_current_teacher),  db: Session = Depends(get_db)
+):
+    students = get_students(db=db, teacher_id=current_teacher.teacher_id, course_id=course_id)
+    if students:
+        return students
+    else:
+        raise HTTPException(status_code=404, detail="The students were not found!")
+
+
+@router.post("/new_course", response_model=Output_Schema)
+def create_course_for_teacher(
+    registration_data: Course_Registration, db: Session = Depends(get_db)
+):
+
+    new_course = create_course(
+        db=db,
+        course_name=registration_data.course_name,
+        course_sphere=registration_data.course_sphere,
+        teacher_email=registration_data.teacher_email,
+        teacher_hashed_password=registration_data.teacher_hashed_password,
+    )
+    if new_course:
+        return new_course
+    else:
+        raise HTTPException(status_code=401, detail="The teacher was not found!")
+
+
+@router.get("/teacher_courses", response_model=list[Output_Schema])
+def show_courses_to_teacher(current_teacher: int = Depends(get_current_teacher), db: Session = Depends(get_db)):
+    courses = get_courses_for_teacher(db=db, teacher_id=current_teacher.teacher_id)
+    if courses:
+        return courses
+    else:
+        raise HTTPException(status_code=404, detail="Courses were not found!")
+
+
+@router.post("/teacher_video", response_model=Video_Output)
+def create_video_for_teacher(video_in: Video_Upload, current_teacher: int = Depends(get_current_teacher), db: Session = Depends(get_db)):
+    check_video = get_video_for_teacher(
+        db=db,
+        course_id=video_in.course_id,
+        teacher_id=current_teacher.teacher_id,
+        video_url=video_in.video_url,
+    )
+    if check_video:
+        return check_video
+    else:
+        try:
+            new_video = upload_video(
+                db=db,
+                course_id=video_in.course_id,
+                teacher_id=current_teacher.teacher_id,
+                video_name=video_in.video_name,
+                video_url=video_in.video_url,
+                video_description=video_in.video_description,
+                video_order_id=video_in.video_order_id,
+            )
+            
+            if not new_video:
+                raise HTTPException(status_code = 400, detail = "URL is not valid")
+            
+            return new_video
+        except IntegrityError:
+            raise HTTPException(status_code=400, detail="The order id is not available")
+-e \n--- FILE: app/api/student.py ---
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import EmailStr
+from sqlalchemy.orm import Session
+from app.schemas.student import Student_Registration, Student_Output
+from app.schemas.teacher import Teacher_Output
+from app.schemas.video import Video_Output
+from app.schemas.enrollment import Enrollment_Input, Enrollment_Output
+from app.schemas.progress import Progress_Input, Progress_Output
+from app.schemas.token import Token_Base
+from app.crud.student import (
+    create_student, 
+    get_student_by_email,
+    login_existing_student,
+)
+from app.crud.teacher import (
+    get_teachers_for_exact_student,
+    get_teacher,
+    get_teacher_by_email,
+)
+from app.crud.course import get_courses_for_student, new_course_for_student
+from app.crud.video import get_all_videos_from_course
+from app.crud.progress import upload_progress
+from app.core.security import create_access_token, get_current_student
+from app.database import get_db
+
+router = APIRouter(prefix="/students", tags=["Students"])
+
+
+@router.post("/new_student", response_model=Student_Output)
+def register_student(student_in: Student_Registration, db: Session = Depends(get_db)):
+    check_student = get_student_by_email(db=db, student_email=student_in.student_email)
+
+    if check_student:
+        raise HTTPException(status_code=400, detail="The student already exists!")
+    else:
+        student = create_student(
+            db=db,
+            student_first_name=student_in.student_first_name,
+            student_last_name=student_in.student_last_name,
+            student_email=student_in.student_email,
+            student_password=student_in.student_password,
+        )
+        return student
+    
+@router.post("/student_login", response_model = Token_Base)
+def student_sign_in(student_plain_password : str, student_email : str, db : Session = Depends(get_db)):
+    check_student =  get_student_by_email(db = db, student_email = student_email)
+    if check_student:
+        result_of_login = login_existing_student(db = db, student_plain_password = student_plain_password, student_email = student_email)
+        if result_of_login:
+            data = {"sub" : str(result_of_login.student_id)}
+
+            access_token = create_access_token(data)
+
+
+            result = {"access_token" : access_token, "token_type" : "bearer"}
+            return result
+        raise HTTPException(status_code = 400, detail = "Email or password is not valid")
+    raise HTTPException(status_code = 404, detail = "Student was not found!")
+        
+
+
+@router.post("/course_enrollment", response_model = Enrollment_Output)
+def enroll_to_course(enroll_in : Enrollment_Input, current_student : int = Depends(get_current_student), db : Session = Depends(get_db)):
+    new_enrollment = new_course_for_student(db = db, student_id = current_student.student_id, teacher_id = enroll_in.teacher_id, course_id = enroll_in.course_id)
+
+    if not new_enrollment:
+        raise HTTPException(status_code = 400, detail = "Data were invalid!!!")
+    
+    return new_enrollment
+
+
+@router.get("/my_teacher", response_model=Teacher_Output)
+def show_teacher_to_student(teacher_id: int, db: Session = Depends(get_db)):
+    teacher = get_teacher(db=db, teacher_id=teacher_id)
+    if teacher:
+        return teacher
+    else:
+        raise HTTPException(status_code=404, detail="The teacher was not found!")
+
+
+@router.get("/teacher_email", response_model=Teacher_Output)
+def show_teacher_to_student_by_email(
+    teacher_email: EmailStr, db: Session = Depends(get_db)
+):
+    teacher = get_teacher_by_email(db=db, teacher_email=teacher_email)
+    if teacher:
+        return teacher
+    else:
+        raise HTTPException(status_code=404, detail="The teacher was not found!")
+
+
+@router.get("/my_teachers", response_model=list[Teacher_Output])
+def show_teachers_to_student(
+    course_id: int, current_student : int = Depends(get_current_student), db: Session = Depends(get_db)
+):
+    teachers = get_teachers_for_exact_student(
+        db=db, student_id=current_student.student_id, course_id=course_id
+    )
+    if teachers:
+        return teachers
+    else:
+        raise HTTPException(status_code=404, detail="Teachers were not found!")
+
+
+@router.get("/my_courses", response_model=list[Enrollment_Output])
+def show_courses_to_student(current_student: int = Depends(get_current_student), db: Session = Depends(get_db)):
+    courses = get_courses_for_student(db=db, student_id=current_student.student_id)
+    if courses:
+        return courses
+    else:
+        raise HTTPException(status_code=404, detail="Courses were not found!")
+
+
+@router.get("/my_videos", response_model=list[Video_Output])
+def show_videos_to_student(
+    course_id: int, teacher_id: int, current_student: int = Depends(get_current_student), db: Session = Depends(get_db)
+):
+    videos = get_all_videos_from_course(
+        db=db, student_id=current_student.student_id, course_id=course_id, teacher_id=teacher_id
+    )
+
+    if videos:
+        return videos
+    else:
+        raise HTTPException(status_code=404, detail="Videos were not found!")
+    
+@router.post("/into_video", response_model = Progress_Output)
+def work_with_progress(progress_in : Progress_Input, current_student : int = Depends(get_current_student), db : Session = Depends(get_db)):
+    result = upload_progress(db = db, student_id = current_student.student_id, video_id = progress_in.video_id, last_position = progress_in.last_position)
+    
+    if result:
+        return result
+    
+    raise HTTPException(status_code = 404, detail = "The video was not found!!!")-e \n--- FILE: app/main.py ---
+from fastapi import FastAPI
+from app.api.teacher import router as teacher_router
+from app.api.student import router as student_router
+from app.database import Base, engine
+
+app = FastAPI()
+
+Base.metadata.create_all(bind=engine)
+
+app.include_router(teacher_router)
+
+app.include_router(student_router)
+
+--- FILE: .env ---
+DATABASE_URL=postgresql://beybaris@localhost:5432/niet_db
+GOOGLE_CONSOLE_API_KEY=AIzaSyD75iSQ2p5N_CqQjmFiGSZ2HCMybxvsV5g
+SECRET_KEY=f4b0f55694a747e70a5d745b0cffed114aaa0e77b0414a1a288088e90c49eb01
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+--- FILE: .gitignore ---
+.env
+__pycache__
+venv/

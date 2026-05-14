@@ -7,6 +7,7 @@ from app.schemas.student import Student_Output
 from app.schemas.courses import Course_Registration, Output_Schema
 from app.schemas.video import Video_Upload, Video_Output
 from app.schemas.token import Token_Base
+from app.schemas.teacher_login import Teacher_Input_Login
 from app.crud.teacher import get_teacher_by_email, create_teacher, login_existing_teacher
 from app.crud.student import get_student, get_student_by_email, get_students
 from app.crud.course import create_course, get_courses_for_teacher
@@ -37,20 +38,18 @@ def register_teacher(teacher_in: Teacher_Registration, db: Session = Depends(get
 
 
 @router.post("/teacher_login", response_model = Token_Base)
-def teacher_sign_in(teacher_email : str, teacher_plain_password : str, db : Session = Depends(get_db)):
-    check_teacher = get_teacher_by_email(db = db, teacher_email = teacher_email)
-    
-    if check_teacher:
-        result_of_login = login_existing_teacher(db = db, teacher_email = teacher_email, teacher_plain_password = teacher_plain_password)
-        
-        if result_of_login:
-            data = {"sub" : str(result_of_login.teacher_id)}
-            access_token = create_access_token(data)
+def teacher_sign_in(teacher_login_in : Teacher_Input_Login,  db : Session = Depends(get_db)):
+    result_of_login = login_existing_teacher(db = db, 
+                                             teacher_email = teacher_login_in.teacher_email, 
+                                             teacher_plain_password = teacher_login_in.teacher_plain_password)
+    if result_of_login:
+        data = {"sub" : str(result_of_login.teacher_id)}
+        access_token = create_access_token(data)
 
-            result = {"access_token" : access_token, "token_type" : "bearer"}
-            return result 
-        raise HTTPException(status_code = 400, detail = "Email or password is invalid")
-    raise HTTPException(status_code = 404, detail = "Teacher was not found")
+        result = {"access_token" : access_token, "token_type" : "bearer"}
+        return result 
+    raise HTTPException(status_code = 400, detail = "Email or password is invalid")
+    
         
     
 

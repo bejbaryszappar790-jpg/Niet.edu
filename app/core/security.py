@@ -45,14 +45,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="students/student_login")
 def get_current_user(token : str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms = [ALGORITHM])
-
-        user_id = int(payload.get("sub"))
+        
+        user_id = payload.get("sub")
         
         if user_id is None:
             raise HTTPException(status_code = 401, detail = "Could not validate credentials")
 
-        return user_id
-    except JWTError:
+        return int(user_id)
+    
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
     
 
