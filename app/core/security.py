@@ -11,7 +11,7 @@ from datetime import (
 from dotenv import load_dotenv
 import os
 from fastapi.security import OAuth2PasswordBearer
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.crud.student import get_student
 from app.crud.teacher import get_teacher
