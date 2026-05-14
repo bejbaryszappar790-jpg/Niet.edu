@@ -3,7 +3,6 @@ from datetime import datetime
 
 
 class Progress_Base(BaseModel):
-    student_id: int
     video_id: int
     last_position : int
 

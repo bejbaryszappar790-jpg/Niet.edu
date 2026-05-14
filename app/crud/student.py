@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from app.models import Student, Workshop, Enrollment
+from app.core.security import get_password_hash, verify_password
 
 
 def get_student(db: Session, student_id: int):
@@ -30,15 +31,26 @@ def create_student(
     student_first_name: str,
     student_last_name: str,
     student_email: str,
-    student_password: str,
+    student_hashed_password: str,
 ):
+    
+    
     new_student = Student(
         student_first_name=student_first_name,
         student_last_name=student_last_name,
         student_email=student_email,
-        student_password=student_password,
+        student_hashed_password= get_password_hash(student_hashed_password),
     )
     db.add(new_student)
     db.commit()
     db.refresh(new_student)
     return new_student
+
+
+def login_existing_student(db : Session, student_email : str, student_plain_password : str):
+    existing_student = db.query(Student).filter(Student.student_email == student_email).filter()
+    
+
+    result_of_verifying = verify_password(student_plain_password, existing_student.student_hashed_password)
+    if existing_student and result_of_verifying:
+        return existing_student

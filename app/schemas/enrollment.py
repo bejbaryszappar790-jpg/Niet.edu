@@ -7,7 +7,7 @@ class Enrollment_Base(BaseModel):
 
 
 class Enrollment_Input(Enrollment_Base):
-    student_id : int
+    pass
     
 
 class Enrollment_Output(Enrollment_Base):
