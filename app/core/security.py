@@ -22,6 +22,7 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 ACCES_TIME = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+REFRESH_TIME = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS"))
 pwd_context = CryptContext(schemes = ["bcrypt"], deprecated = "auto")
 
 def get_password_hash(password : str):
@@ -32,10 +33,18 @@ def verify_password(plain_password : str, hashed_password : str):
     result_of_checking = pwd_context.verify(plain_password, hashed_password)
     return result_of_checking
 
-def create_access_token(data: dict):
+def create_access_token(data: dict, role : str):
     to_encode = data.copy()
     expire = datetime.now(timezone.UTC) + timedelta(minutes = ACCES_TIME)
-    to_encode.update({"exp" : expire})
+    to_encode.update({"exp" : expire, "type" : "access", "role" : role})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm = ALGORITHM)
+    return encoded_jwt
+
+
+def create_refresh_token(data: dict, role : str):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.UTC) + timedelta(days = REFRESH_TIME)
+    to_encode.update({"exp" : expire, "type" : "refresh", "role" : role})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm = ALGORITHM)
     return encoded_jwt
 
@@ -48,11 +57,25 @@ def get_current_user(token : str = Depends(oauth2_scheme)):
         
         user_id = payload.get("sub")
         
-        if user_id is None:
+        if user_id is None or not str(user_id).isdigit():
             raise HTTPException(status_code = 401, detail = "Could not validate credentials")
 
         return int(user_id)
     
+    except (JWTError, ValueError, TypeError):
+        raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
+    
+def decode_refresh_token(token : str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms = [ALGORITHM])
+        
+        if payload is None:
+            raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
+        
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code = 401, detail = "Refresh token is required")
+        
+        return payload
     except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
     

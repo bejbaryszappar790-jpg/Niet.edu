@@ -31,7 +31,7 @@ def create_student(
     student_first_name: str,
     student_last_name: str,
     student_email: str,
-    student_password: str,
+    student_plain_password: str,
 ):
     
     
@@ -39,7 +39,7 @@ def create_student(
         student_first_name=student_first_name,
         student_last_name=student_last_name,
         student_email=student_email,
-        student_hashed_password= get_password_hash(student_password),
+        student_hashed_password= get_password_hash(student_plain_password),
     )
     db.add(new_student)
     db.commit()

@@ -1,4 +1,4 @@
--e \n--- FILE: app/core/security.py ---
+-e \n--- FILE: ./app/core/security.py ---
 from jose import (
     jwt,
     JWTError,
@@ -23,6 +23,7 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
 ACCES_TIME = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+REFRESH_TIME = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS"))
 pwd_context = CryptContext(schemes = ["bcrypt"], deprecated = "auto")
 
 def get_password_hash(password : str):
@@ -33,10 +34,18 @@ def verify_password(plain_password : str, hashed_password : str):
     result_of_checking = pwd_context.verify(plain_password, hashed_password)
     return result_of_checking
 
-def create_access_token(data: dict):
+def create_access_token(data: dict, role : str):
     to_encode = data.copy()
     expire = datetime.now(timezone.UTC) + timedelta(minutes = ACCES_TIME)
-    to_encode.update({"exp" : expire})
+    to_encode.update({"exp" : expire, "type" : "access", "role" : role})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm = ALGORITHM)
+    return encoded_jwt
+
+
+def create_refresh_token(data: dict, role : str):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.UTC) + timedelta(days = REFRESH_TIME)
+    to_encode.update({"exp" : expire, "type" : "refresh", "role" : role})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm = ALGORITHM)
     return encoded_jwt
 
@@ -46,14 +55,29 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="students/student_login")
 def get_current_user(token : str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms = [ALGORITHM])
-
-        user_id = int(payload.get("sub"))
+        
+        user_id = payload.get("sub")
         
         if user_id is None:
             raise HTTPException(status_code = 401, detail = "Could not validate credentials")
 
-        return user_id
-    except JWTError:
+        return int(user_id)
+    
+    except (JWTError, ValueError, TypeError):
+        raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
+    
+def decode_refresh_token(token : str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms = [ALGORITHM])
+        
+        if payload is None:
+            raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
+        
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code = 401, detail = "Refresh token is required")
+        
+        return payload
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code = 401, detail = "Token is invalid or expired")
     
 
@@ -72,7 +96,7 @@ def get_current_teacher(teacher_id : int = Depends(get_current_user), db : Sessi
     if check_teacher:
         return check_teacher
     
-    raise HTTPException(status_code = 403, detail = "Student is not allowed to use teacher's service for")-e \n--- FILE: app/models.py ---
+    raise HTTPException(status_code = 403, detail = "Student is not allowed to use teacher's service for")-e \n--- FILE: ./app/models.py ---
 from app.database import Base
 from sqlalchemy import (
     Column,
@@ -172,7 +196,7 @@ class Progress(Base):
     is_watched = Column(Boolean, default=False)
     watched_on = Column(DateTime(timezone=True), server_default=func.now())
     last_position = Column(Integer, default=0, nullable=False)
--e \n--- FILE: app/database.py ---
+-e \n--- FILE: ./app/database.py ---
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
@@ -195,7 +219,7 @@ def get_db():
         yield db
     finally:
         db.close()
--e \n--- FILE: app/utils/youtube.py ---
+-e \n--- FILE: ./app/utils/youtube.py ---
 import re
 import requests
 import os
@@ -229,13 +253,21 @@ def get_youtube_metadata(url: str):
     if not data.get("items"):
         return {"error": "Video not found in YouTube"}
     return data
--e \n--- FILE: app/schemas/token.py ---
+-e \n--- FILE: ./app/schemas/token.py ---
 from pydantic import BaseModel
 
 
 class Token_Base(BaseModel):
     access_token: str
-    token_type : str-e \n--- FILE: app/schemas/teacher.py ---
+    refresh_token : str
+    token_type : str
+    class Config:
+        from_attributes = True
+
+
+class Refresh_Token_Input(BaseModel):
+    refresh_token : str
+    -e \n--- FILE: ./app/schemas/teacher.py ---
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -246,7 +278,7 @@ class Teacher_Base(BaseModel):
 
 class Teacher_Registration(Teacher_Base):
     teacher_email: EmailStr 
-    teacher_hashed_password: str = Field(..., min_length = 8)
+    teacher_plain_password: str = Field(..., min_length = 8)
 
 
 class Teacher_Output(Teacher_Base):
@@ -254,7 +286,19 @@ class Teacher_Output(Teacher_Base):
 
     class Config:
         from_attributes = True
--e \n--- FILE: app/schemas/enrollment.py ---
+-e \n--- FILE: ./app/schemas/teacher_login.py ---
+from pydantic import BaseModel, EmailStr, Field
+
+class Teacher_Input_Login(BaseModel):
+    teacher_plain_password : str = Field(..., min_length = 8)
+    teacher_email : EmailStr-e \n--- FILE: ./app/schemas/student_login.py ---
+from pydantic import BaseModel, EmailStr, Field
+
+
+class Student_Login_Input(BaseModel):
+    student_plain_password : str = Field(..., min_length = 8)
+    student_email : EmailStr
+-e \n--- FILE: ./app/schemas/enrollment.py ---
 from pydantic import BaseModel
 
 
@@ -273,7 +317,7 @@ class Enrollment_Output(Enrollment_Base):
     course_name : str
     course_sphere : str
     class Config:
-        from_attributes = True-e \n--- FILE: app/schemas/courses.py ---
+        from_attributes = True-e \n--- FILE: ./app/schemas/courses.py ---
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -283,8 +327,7 @@ class Course_Base(BaseModel):
 
 
 class Course_Registration(Course_Base):
-    teacher_email: EmailStr
-    teacher_password: str = Field(..., min_length = 8)
+    pass
 
 
 class Output_Schema(Course_Base):
@@ -292,7 +335,7 @@ class Output_Schema(Course_Base):
 
     class Config:
         from_attributes = True
--e \n--- FILE: app/schemas/student.py ---
+-e \n--- FILE: ./app/schemas/student.py ---
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -303,7 +346,7 @@ class Student_Base(BaseModel):
 
 class Student_Registration(Student_Base):
     student_email: EmailStr
-    student_hashed_password: str = Field(..., min_length = 8)
+    student_plain_password: str = Field(..., min_length = 8)
 
 
 class Student_Output(Student_Base):
@@ -311,7 +354,7 @@ class Student_Output(Student_Base):
 
     class Config:
         from_attributes = True
--e \n--- FILE: app/schemas/progress.py ---
+-e \n--- FILE: ./app/schemas/progress.py ---
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -330,7 +373,7 @@ class Progress_Output(Progress_Base):
     is_watched: bool
     class Config:
         from_attributes = True
--e \n--- FILE: app/schemas/video.py ---
+-e \n--- FILE: ./app/schemas/video.py ---
 from pydantic import BaseModel
 
 
@@ -354,10 +397,10 @@ class Video_Output(Video_Base):
     teacher_id : int
     class Config:
         from_attributes = True
--e \n--- FILE: app/crud/teacher.py ---
+-e \n--- FILE: ./app/crud/teacher.py ---
 from sqlalchemy.orm import Session
 from app.models import Teacher, Enrollment, Workshop
-from app.core.security import verify_password
+from app.core.security import verify_password, get_password_hash
 
 
 def get_teacher(db: Session, teacher_id: int):
@@ -391,15 +434,15 @@ def create_teacher(
     teacher_first_name: str,
     teacher_last_name: str,
     teacher_email: str,
-    teacher_password: str,
+    teacher_plain_password: str,
 ):
     
-
+    
     new_teacher = Teacher(
         teacher_first_name=teacher_first_name,
         teacher_last_name=teacher_last_name,
         teacher_email=teacher_email,
-        teacher_hashed_password=teacher_password,
+        teacher_hashed_password=get_password_hash(teacher_plain_password),
     )
     db.add(new_teacher)
     db.commit()
@@ -408,15 +451,18 @@ def create_teacher(
 
 
 def login_existing_teacher(db : Session, teacher_email : str, teacher_plain_password : str):
-    existing_teacher = db.query(Teacher).filter(teacher_email == teacher_email).first()
+    existing_teacher = db.query(Teacher).filter(Teacher.teacher_email == teacher_email).first()
 
-    result_of_verifying = verify_password(teacher_plain_password, existing_teacher.teacher_hashed_password)
-    if existing_teacher and result_of_verifying:
-        return existing_teacher
+    
+    if existing_teacher:
+        result_of_verifying = verify_password(teacher_plain_password, existing_teacher.teacher_hashed_password)
+        if result_of_verifying:
+            return existing_teacher
         
--e \n--- FILE: app/crud/course.py ---
+-e \n--- FILE: ./app/crud/course.py ---
 from sqlalchemy.orm import Session
 from app.models import Course, Enrollment, Workshop, Teacher, Student
+
 
 
 def get_course(db: Session, course_id: int):
@@ -455,21 +501,8 @@ def get_courses_for_teacher(db: Session, teacher_id: int):
     return courses
 
 
-def new_course_for_student(db: Session, student_id : int, course_id : int, teacher_id : int):
-    check_student = db.query(Student).filter(Student.student_id == student_id).first()
-    check_course = db.query(Course).filter(Course.course_id == course_id).first()
-    check_teacher = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
-
-    if check_student and check_course and check_teacher:
-        check_enrollment = db.query(Enrollment)\
-            .filter(
-                Enrollment.student_id  == student_id, 
-                Enrollment.teacher_id == teacher_id, 
-                Enrollment.course_id == course_id)\
-            .first()
-        if check_enrollment:
-            
-            checked_enrollment_for_user = db.query(
+def get_enrollment_details(db: Session, student_id : int, course_id : int, teacher_id : int):
+    return db.query(
                 Enrollment.course_id, 
                 Enrollment.teacher_id,
                 Enrollment.student_id,
@@ -485,6 +518,22 @@ def new_course_for_student(db: Session, student_id : int, course_id : int, teach
                  Enrollment.teacher_id == teacher_id
                  )\
              .first()
+
+def new_course_for_student(db: Session, student_id : int, course_id : int, teacher_id : int):
+    check_student = db.query(Student).filter(Student.student_id == student_id).first()
+    check_course = db.query(Course).filter(Course.course_id == course_id).first()
+    check_teacher = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
+
+    if check_student and check_course and check_teacher:
+        check_enrollment = db.query(Enrollment)\
+            .filter(
+                Enrollment.student_id  == student_id, 
+                Enrollment.teacher_id == teacher_id, 
+                Enrollment.course_id == course_id)\
+            .first()
+        if check_enrollment:
+            
+            checked_enrollment_for_user = get_enrollment_details(db = db, student_id = student_id, course_id = course_id, teacher_id = teacher_id)
             return checked_enrollment_for_user
     
         new_enrollment = Enrollment(student_id = student_id, course_id = course_id, teacher_id = teacher_id)
@@ -492,24 +541,8 @@ def new_course_for_student(db: Session, student_id : int, course_id : int, teach
         db.commit()
         db.refresh(new_enrollment)
 
-        enrollment_for_user = db.query(
-            Enrollment.course_id, 
-            Enrollment.teacher_id, 
-            Enrollment.student_id, 
-            Course.course_name, 
-            Course.course_sphere, 
-            Teacher.teacher_first_name, 
-            Teacher.teacher_last_name
-            ).join(Course, Enrollment.course_id == Course.course_id)\
-             .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)\
-             .filter(
-                 Enrollment.course_id == course_id, 
-                 Enrollment.student_id == student_id, 
-                 Enrollment.teacher_id == teacher_id
-                 )\
-            .first()
+        enrollment_for_user = get_enrollment_details(db = db, student_id = student_id, course_id = course_id, teacher_id = teacher_id)
 
-        
         return enrollment_for_user
 
 
@@ -517,60 +550,35 @@ def create_course(
     db: Session,
     course_name: str,
     course_sphere: str,
-    teacher_email: str,
-    teacher_password: str,
+    teacher_id : int
 ):
-    teacher = (
-        db.query(Teacher)
-        .filter(
-            Teacher.teacher_email == teacher_email,
-            Teacher.teacher_password == teacher_password,
-        )
-        .first()
-    )
+   
+    existing_course = db.query(Course).filter(Course.course_name == course_name).first()
+    
+    if existing_course:
+        existing_workshop = db.query(Workshop).filter(Workshop.course_id == existing_course.course_id, Workshop.teacher_id == teacher_id).first()
 
-    if teacher:
-        check_course = (
-            db.query(Course)
-            .filter(
-                Course.course_name == course_name, Course.course_sphere == course_sphere
-            )
-            .first()
-        )
-
-        if check_course:
-            check_workshop = (
-                db.query(Workshop)
-                .filter(
-                    Workshop.course_id == check_course.course_id,
-                    Workshop.teacher_id == teacher.teacher_id,
-                )
-                .first()
-            )
-
-            if not check_workshop:
-
-                new_workshop = Workshop(
-                    teacher_id=teacher.teacher_id, course_id=check_course.course_id
-                )
-                db.add(new_workshop)
-                db.commit()
-                return check_course
-            else:
-                return check_course
-        else:
-            new_course = Course(course_name=course_name, course_sphere=course_sphere)
-            db.add(new_course)
-            db.commit()
-            db.refresh(new_course)
-
-            new_workshop = Workshop(
-                teacher_id=teacher.teacher_id, course_id=new_course.course_id
-            )
+        if not existing_workshop:
+            new_workshop = Workshop(course_id = existing_course.course_id, teacher_id = teacher_id)
             db.add(new_workshop)
             db.commit()
-            return new_course
--e \n--- FILE: app/crud/student.py ---
+        
+            return existing_course
+
+        return existing_course
+    
+    new_course = Course(course_name = course_name, course_sphere = course_sphere)
+    db.add(new_course)
+    db.commit()
+    db.refresh(new_course)
+    new_workshop = Workshop(course_id = new_course.course_id, teacher_id = teacher_id)
+    db.add(new_workshop)
+    db.commit()
+
+
+    return new_course
+    
+-e \n--- FILE: ./app/crud/student.py ---
 from sqlalchemy.orm import Session
 from app.models import Student, Workshop, Enrollment
 from app.core.security import get_password_hash, verify_password
@@ -604,7 +612,7 @@ def create_student(
     student_first_name: str,
     student_last_name: str,
     student_email: str,
-    student_hashed_password: str,
+    student_plain_password: str,
 ):
     
     
@@ -612,7 +620,7 @@ def create_student(
         student_first_name=student_first_name,
         student_last_name=student_last_name,
         student_email=student_email,
-        student_hashed_password= get_password_hash(student_hashed_password),
+        student_hashed_password= get_password_hash(student_plain_password),
     )
     db.add(new_student)
     db.commit()
@@ -621,12 +629,12 @@ def create_student(
 
 
 def login_existing_student(db : Session, student_email : str, student_plain_password : str):
-    existing_student = db.query(Student).filter(Student.student_email == student_email).filter()
+    existing_student = db.query(Student).filter(Student.student_email == student_email).first()
     
-
-    result_of_verifying = verify_password(student_plain_password, existing_student.student_hashed_password)
-    if existing_student and result_of_verifying:
-        return existing_student-e \n--- FILE: app/crud/progress.py ---
+    if existing_student:
+        result_of_verifying = verify_password(student_plain_password, existing_student.student_hashed_password)
+        if result_of_verifying:
+            return existing_student-e \n--- FILE: ./app/crud/progress.py ---
 from sqlalchemy.orm import Session
 from app.models import Progress, Video
 
@@ -666,7 +674,7 @@ def upload_progress(db: Session, video_id: int, student_id: int, last_position: 
         db.commit()
         db.refresh(progress)
         return progress
--e \n--- FILE: app/crud/video.py ---
+-e \n--- FILE: ./app/crud/video.py ---
 from sqlalchemy.orm import Session
 from app.models import Video, Enrollment
 from app.utils.youtube import get_youtube_metadata, parsing_youtube_url
@@ -700,7 +708,7 @@ def upload_video(
 
         result = get_youtube_metadata(video_url)
         youtube_id = parsing_youtube_url(video_url)
-        if "error" not in result:
+        if "error" not in result and result.get('items'):
             if not video_name: 
                 video_name = result['items'][0]['snippet']['title']
         
@@ -766,7 +774,35 @@ def get_video_for_teacher(db: Session, course_id: int, teacher_id: int, video_ur
     )
     if video:
         return video
--e \n--- FILE: app/api/teacher.py ---
+-e \n--- FILE: ./app/api/auth.py ---
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.schemas.token import Refresh_Token_Input, Token_Base
+from app.core.security import create_refresh_token, create_access_token, decode_refresh_token
+
+
+router = APIRouter(prefix = "/authentication", tags = ["Get_token"])
+
+@router.post("/new_token", response_model = Token_Base)
+def give_user_token(refresh_token_in : Refresh_Token_Input,  db : Session = Depends(get_db)):
+    payload = decode_refresh_token(refresh_token_in.refresh_token)
+    
+    user_id = payload.get("sub")
+    
+    refresh_data = {"sub": str(user_id)}
+    access_data = {"sub" : str(user_id)}
+    
+    refresh_token = create_refresh_token(data = refresh_data, role = payload.get("role"))
+    access_token = create_access_token(data = access_data, role = payload.get("role"))
+
+    return {
+        "access_token" : access_token,
+        "refresh_token" : refresh_token,
+        "token_type" : "bearer"
+    }
+    
+    -e \n--- FILE: ./app/api/teacher.py ---
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import EmailStr
 from sqlalchemy.orm import Session
@@ -776,11 +812,13 @@ from app.schemas.student import Student_Output
 from app.schemas.courses import Course_Registration, Output_Schema
 from app.schemas.video import Video_Upload, Video_Output
 from app.schemas.token import Token_Base
+from app.schemas.teacher_login import Teacher_Input_Login
 from app.crud.teacher import get_teacher_by_email, create_teacher, login_existing_teacher
 from app.crud.student import get_student, get_student_by_email, get_students
 from app.crud.course import create_course, get_courses_for_teacher
 from app.crud.video import upload_video, get_video_for_teacher
-from app.core.security import create_access_token, get_current_teacher
+from app.core.security import create_access_token, get_current_teacher, create_refresh_token
+from app.models import Teacher
 from app.database import get_db
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
@@ -799,27 +837,32 @@ def register_teacher(teacher_in: Teacher_Registration, db: Session = Depends(get
             teacher_first_name=teacher_in.teacher_first_name,
             teacher_last_name=teacher_in.teacher_last_name,
             teacher_email=teacher_in.teacher_email,
-            teacher_password=teacher_in.teacher_password,
+            teacher_plain_password=teacher_in.teacher_plain_password,
         )
         return result
 
 
 
 @router.post("/teacher_login", response_model = Token_Base)
-def teacher_sign_in(teacher_email : str, teacher_plain_password : str, db : Session = Depends(get_db)):
-    check_teacher = get_teacher_by_email(db = db, teacher_email = teacher_email)
+def teacher_sign_in(teacher_login_in : Teacher_Input_Login,  db : Session = Depends(get_db)):
+    result_of_login = login_existing_teacher(db = db, 
+                                             teacher_email = teacher_login_in.teacher_email, 
+                                             teacher_plain_password = teacher_login_in.teacher_plain_password)
+    if result_of_login:
     
-    if check_teacher:
-        result_of_login = login_existing_teacher(db = db, teacher_email = teacher_email, teacher_plain_password = teacher_plain_password)
-        
-        if result_of_login:
-            data = {"sub" : str(result_of_login.teacher_id)}
-            access_token = create_access_token(data)
+        refresh_data = {"sub": str(result_of_login.teacher_id)}
+        access_data = {"sub" : str(result_of_login.teacher_id)}
+    
+        refresh_token = create_refresh_token(data = refresh_data, role = "teacher")
+        access_token = create_access_token(data = access_data, role = "teacher")
 
-            result = {"access_token" : access_token, "token_type" : "bearer"}
-            return result 
-        raise HTTPException(status_code = 400, detail = "Email or password is invalid")
-    raise HTTPException(status_code = 404, detail = "Teacher was not found")
+        return {
+            "access_token" : access_token,
+            "refresh_token" : refresh_token,
+            "token_type" : "bearer"
+        }
+    raise HTTPException(status_code = 400, detail = "Email or password is invalid")
+    
         
     
 
@@ -849,7 +892,7 @@ def show_student_to_teacher_by_email(
 
 @router.get("/get_students", response_model=list[Student_Output])
 def show_students_to_teacher(
-    course_id: int, current_teacher: int = Depends(get_current_teacher),  db: Session = Depends(get_db)
+    course_id: int, current_teacher: Teacher = Depends(get_current_teacher),  db: Session = Depends(get_db)
 ):
     students = get_students(db=db, teacher_id=current_teacher.teacher_id, course_id=course_id)
     if students:
@@ -860,15 +903,14 @@ def show_students_to_teacher(
 
 @router.post("/new_course", response_model=Output_Schema)
 def create_course_for_teacher(
-    registration_data: Course_Registration, db: Session = Depends(get_db)
+    registration_data: Course_Registration, current_teacher : Teacher = Depends(get_current_teacher), db: Session = Depends(get_db)
 ):
 
     new_course = create_course(
         db=db,
         course_name=registration_data.course_name,
         course_sphere=registration_data.course_sphere,
-        teacher_email=registration_data.teacher_email,
-        teacher_hashed_password=registration_data.teacher_hashed_password,
+        teacher_id = current_teacher.teacher_id
     )
     if new_course:
         return new_course
@@ -877,7 +919,7 @@ def create_course_for_teacher(
 
 
 @router.get("/teacher_courses", response_model=list[Output_Schema])
-def show_courses_to_teacher(current_teacher: int = Depends(get_current_teacher), db: Session = Depends(get_db)):
+def show_courses_to_teacher(current_teacher: Teacher = Depends(get_current_teacher), db: Session = Depends(get_db)):
     courses = get_courses_for_teacher(db=db, teacher_id=current_teacher.teacher_id)
     if courses:
         return courses
@@ -886,7 +928,7 @@ def show_courses_to_teacher(current_teacher: int = Depends(get_current_teacher),
 
 
 @router.post("/teacher_video", response_model=Video_Output)
-def create_video_for_teacher(video_in: Video_Upload, current_teacher: int = Depends(get_current_teacher), db: Session = Depends(get_db)):
+def create_video_for_teacher(video_in: Video_Upload, current_teacher: Teacher = Depends(get_current_teacher), db: Session = Depends(get_db)):
     check_video = get_video_for_teacher(
         db=db,
         course_id=video_in.course_id,
@@ -913,7 +955,7 @@ def create_video_for_teacher(video_in: Video_Upload, current_teacher: int = Depe
             return new_video
         except IntegrityError:
             raise HTTPException(status_code=400, detail="The order id is not available")
--e \n--- FILE: app/api/student.py ---
+-e \n--- FILE: ./app/api/student.py ---
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import EmailStr
 from sqlalchemy.orm import Session
@@ -923,6 +965,7 @@ from app.schemas.video import Video_Output
 from app.schemas.enrollment import Enrollment_Input, Enrollment_Output
 from app.schemas.progress import Progress_Input, Progress_Output
 from app.schemas.token import Token_Base
+from app.schemas.student_login import Student_Login_Input
 from app.crud.student import (
     create_student, 
     get_student_by_email,
@@ -936,7 +979,8 @@ from app.crud.teacher import (
 from app.crud.course import get_courses_for_student, new_course_for_student
 from app.crud.video import get_all_videos_from_course
 from app.crud.progress import upload_progress
-from app.core.security import create_access_token, get_current_student
+from app.core.security import create_access_token, get_current_student, create_refresh_token
+from app.models import Student
 from app.database import get_db
 
 router = APIRouter(prefix="/students", tags=["Students"])
@@ -954,30 +998,37 @@ def register_student(student_in: Student_Registration, db: Session = Depends(get
             student_first_name=student_in.student_first_name,
             student_last_name=student_in.student_last_name,
             student_email=student_in.student_email,
-            student_password=student_in.student_password,
+            student_plain_password=student_in.student_plain_password,
         )
         return student
     
 @router.post("/student_login", response_model = Token_Base)
-def student_sign_in(student_plain_password : str, student_email : str, db : Session = Depends(get_db)):
-    check_student =  get_student_by_email(db = db, student_email = student_email)
-    if check_student:
-        result_of_login = login_existing_student(db = db, student_plain_password = student_plain_password, student_email = student_email)
-        if result_of_login:
-            data = {"sub" : str(result_of_login.student_id)}
+def student_sign_in(student_login_in : Student_Login_Input, db : Session = Depends(get_db)):
 
-            access_token = create_access_token(data)
+    result_of_login = login_existing_student(db = db, 
+                                             student_plain_password = student_login_in.student_plain_password, 
+                                             student_email = student_login_in.student_email)
+        
+    if result_of_login:
 
+        refresh_data = {"sub": str(result_of_login.student_id)}
+        access_data = {"sub" : str(result_of_login.student_id)}
+    
+        refresh_token = create_refresh_token(data = refresh_data, role = "student")
+        access_token = create_access_token(data = access_data, role = "student")
 
-            result = {"access_token" : access_token, "token_type" : "bearer"}
-            return result
-        raise HTTPException(status_code = 400, detail = "Email or password is not valid")
-    raise HTTPException(status_code = 404, detail = "Student was not found!")
+        return {
+            "access_token" : access_token,
+            "refresh_token" : refresh_token,
+            "token_type" : "bearer"
+        }
+    raise HTTPException(status_code = 400, detail = "Email or password is not valid")
+    
         
 
 
 @router.post("/course_enrollment", response_model = Enrollment_Output)
-def enroll_to_course(enroll_in : Enrollment_Input, current_student : int = Depends(get_current_student), db : Session = Depends(get_db)):
+def enroll_to_course(enroll_in : Enrollment_Input, current_student : Student = Depends(get_current_student), db : Session = Depends(get_db)):
     new_enrollment = new_course_for_student(db = db, student_id = current_student.student_id, teacher_id = enroll_in.teacher_id, course_id = enroll_in.course_id)
 
     if not new_enrollment:
@@ -1008,7 +1059,7 @@ def show_teacher_to_student_by_email(
 
 @router.get("/my_teachers", response_model=list[Teacher_Output])
 def show_teachers_to_student(
-    course_id: int, current_student : int = Depends(get_current_student), db: Session = Depends(get_db)
+    course_id: int, current_student : Student = Depends(get_current_student), db: Session = Depends(get_db)
 ):
     teachers = get_teachers_for_exact_student(
         db=db, student_id=current_student.student_id, course_id=course_id
@@ -1020,7 +1071,7 @@ def show_teachers_to_student(
 
 
 @router.get("/my_courses", response_model=list[Enrollment_Output])
-def show_courses_to_student(current_student: int = Depends(get_current_student), db: Session = Depends(get_db)):
+def show_courses_to_student(current_student: Student = Depends(get_current_student), db: Session = Depends(get_db)):
     courses = get_courses_for_student(db=db, student_id=current_student.student_id)
     if courses:
         return courses
@@ -1030,7 +1081,7 @@ def show_courses_to_student(current_student: int = Depends(get_current_student),
 
 @router.get("/my_videos", response_model=list[Video_Output])
 def show_videos_to_student(
-    course_id: int, teacher_id: int, current_student: int = Depends(get_current_student), db: Session = Depends(get_db)
+    course_id: int, teacher_id: int, current_student: Student = Depends(get_current_student), db: Session = Depends(get_db)
 ):
     videos = get_all_videos_from_course(
         db=db, student_id=current_student.student_id, course_id=course_id, teacher_id=teacher_id
@@ -1042,33 +1093,56 @@ def show_videos_to_student(
         raise HTTPException(status_code=404, detail="Videos were not found!")
     
 @router.post("/into_video", response_model = Progress_Output)
-def work_with_progress(progress_in : Progress_Input, current_student : int = Depends(get_current_student), db : Session = Depends(get_db)):
+def work_with_progress(progress_in : Progress_Input, current_student : Student = Depends(get_current_student), db : Session = Depends(get_db)):
     result = upload_progress(db = db, student_id = current_student.student_id, video_id = progress_in.video_id, last_position = progress_in.last_position)
     
     if result:
         return result
     
-    raise HTTPException(status_code = 404, detail = "The video was not found!!!")-e \n--- FILE: app/main.py ---
+    raise HTTPException(status_code = 404, detail = "The video was not found!!!")
+
+-e \n--- FILE: ./app/main.py ---
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.api.teacher import router as teacher_router
 from app.api.student import router as student_router
-from app.database import Base, engine
+from app.api.auth import router as auth_router
 
 app = FastAPI()
 
-Base.metadata.create_all(bind=engine)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials = True,
+    allow_methods = ["*"],
+    allow_headers = ["*"]
+)
+
+
 
 app.include_router(teacher_router)
 
 app.include_router(student_router)
 
---- FILE: .env ---
-DATABASE_URL=postgresql://beybaris@localhost:5432/niet_db
-GOOGLE_CONSOLE_API_KEY=AIzaSyD75iSQ2p5N_CqQjmFiGSZ2HCMybxvsV5g
-SECRET_KEY=f4b0f55694a747e70a5d745b0cffed114aaa0e77b0414a1a288088e90c49eb01
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
---- FILE: .gitignore ---
-.env
-__pycache__
-venv/
+app.include_router(auth_router)
+
+--- FILE: requirements.txt ---
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.13.0
+click==8.3.2
+fastapi==0.135.3
+h11==0.16.0
+httptools==0.7.1
+idna==3.11
+pydantic==2.12.5
+pydantic_core==2.41.5
+python-dotenv==1.2.2
+PyYAML==6.0.3
+starlette==1.0.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+uvicorn==0.44.0
+uvloop==0.22.1
+watchfiles==1.1.1
+websockets==16.0

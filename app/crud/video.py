@@ -31,7 +31,7 @@ def upload_video(
 
         result = get_youtube_metadata(video_url)
         youtube_id = parsing_youtube_url(video_url)
-        if "error" not in result:
+        if "error" not in result and result.get('items'):
             if not video_name: 
                 video_name = result['items'][0]['snippet']['title']
         

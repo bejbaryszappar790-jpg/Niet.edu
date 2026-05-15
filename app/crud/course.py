@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from app.models import Course, Enrollment, Workshop, Teacher, Student
 
 
+
 def get_course(db: Session, course_id: int):
     result = db.query(Course).filter(Course.course_id == course_id).first()
     return result
@@ -38,21 +39,8 @@ def get_courses_for_teacher(db: Session, teacher_id: int):
     return courses
 
 
-def new_course_for_student(db: Session, student_id : int, course_id : int, teacher_id : int):
-    check_student = db.query(Student).filter(Student.student_id == student_id).first()
-    check_course = db.query(Course).filter(Course.course_id == course_id).first()
-    check_teacher = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
-
-    if check_student and check_course and check_teacher:
-        check_enrollment = db.query(Enrollment)\
-            .filter(
-                Enrollment.student_id  == student_id, 
-                Enrollment.teacher_id == teacher_id, 
-                Enrollment.course_id == course_id)\
-            .first()
-        if check_enrollment:
-            
-            checked_enrollment_for_user = db.query(
+def get_enrollment_details(db: Session, student_id : int, course_id : int, teacher_id : int):
+    return db.query(
                 Enrollment.course_id, 
                 Enrollment.teacher_id,
                 Enrollment.student_id,
@@ -68,6 +56,22 @@ def new_course_for_student(db: Session, student_id : int, course_id : int, teach
                  Enrollment.teacher_id == teacher_id
                  )\
              .first()
+
+def new_course_for_student(db: Session, student_id : int, course_id : int, teacher_id : int):
+    check_student = db.query(Student).filter(Student.student_id == student_id).first()
+    check_course = db.query(Course).filter(Course.course_id == course_id).first()
+    check_teacher = db.query(Teacher).filter(Teacher.teacher_id == teacher_id).first()
+
+    if check_student and check_course and check_teacher:
+        check_enrollment = db.query(Enrollment)\
+            .filter(
+                Enrollment.student_id  == student_id, 
+                Enrollment.teacher_id == teacher_id, 
+                Enrollment.course_id == course_id)\
+            .first()
+        if check_enrollment:
+            
+            checked_enrollment_for_user = get_enrollment_details(db = db, student_id = student_id, course_id = course_id, teacher_id = teacher_id)
             return checked_enrollment_for_user
     
         new_enrollment = Enrollment(student_id = student_id, course_id = course_id, teacher_id = teacher_id)
@@ -75,24 +79,8 @@ def new_course_for_student(db: Session, student_id : int, course_id : int, teach
         db.commit()
         db.refresh(new_enrollment)
 
-        enrollment_for_user = db.query(
-            Enrollment.course_id, 
-            Enrollment.teacher_id, 
-            Enrollment.student_id, 
-            Course.course_name, 
-            Course.course_sphere, 
-            Teacher.teacher_first_name, 
-            Teacher.teacher_last_name
-            ).join(Course, Enrollment.course_id == Course.course_id)\
-             .join(Teacher, Enrollment.teacher_id == Teacher.teacher_id)\
-             .filter(
-                 Enrollment.course_id == course_id, 
-                 Enrollment.student_id == student_id, 
-                 Enrollment.teacher_id == teacher_id
-                 )\
-            .first()
+        enrollment_for_user = get_enrollment_details(db = db, student_id = student_id, course_id = course_id, teacher_id = teacher_id)
 
-        
         return enrollment_for_user
 
 
@@ -100,56 +88,31 @@ def create_course(
     db: Session,
     course_name: str,
     course_sphere: str,
-    teacher_email: str,
-    teacher_password: str,
+    teacher_id : int
 ):
-    teacher = (
-        db.query(Teacher)
-        .filter(
-            Teacher.teacher_email == teacher_email,
-            Teacher.teacher_password == teacher_password,
-        )
-        .first()
-    )
+   
+    existing_course = db.query(Course).filter(Course.course_name == course_name).first()
+    
+    if existing_course:
+        existing_workshop = db.query(Workshop).filter(Workshop.course_id == existing_course.course_id, Workshop.teacher_id == teacher_id).first()
 
-    if teacher:
-        check_course = (
-            db.query(Course)
-            .filter(
-                Course.course_name == course_name, Course.course_sphere == course_sphere
-            )
-            .first()
-        )
-
-        if check_course:
-            check_workshop = (
-                db.query(Workshop)
-                .filter(
-                    Workshop.course_id == check_course.course_id,
-                    Workshop.teacher_id == teacher.teacher_id,
-                )
-                .first()
-            )
-
-            if not check_workshop:
-
-                new_workshop = Workshop(
-                    teacher_id=teacher.teacher_id, course_id=check_course.course_id
-                )
-                db.add(new_workshop)
-                db.commit()
-                return check_course
-            else:
-                return check_course
-        else:
-            new_course = Course(course_name=course_name, course_sphere=course_sphere)
-            db.add(new_course)
-            db.commit()
-            db.refresh(new_course)
-
-            new_workshop = Workshop(
-                teacher_id=teacher.teacher_id, course_id=new_course.course_id
-            )
+        if not existing_workshop:
+            new_workshop = Workshop(course_id = existing_course.course_id, teacher_id = teacher_id)
             db.add(new_workshop)
             db.commit()
-            return new_course
+        
+            return existing_course
+
+        return existing_course
+    
+    new_course = Course(course_name = course_name, course_sphere = course_sphere)
+    db.add(new_course)
+    db.commit()
+    db.refresh(new_course)
+    new_workshop = Workshop(course_id = new_course.course_id, teacher_id = teacher_id)
+    db.add(new_workshop)
+    db.commit()
+
+
+    return new_course
+    

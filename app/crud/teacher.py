@@ -34,7 +34,7 @@ def create_teacher(
     teacher_first_name: str,
     teacher_last_name: str,
     teacher_email: str,
-    teacher_password: str,
+    teacher_plain_password: str,
 ):
     
     
@@ -42,7 +42,7 @@ def create_teacher(
         teacher_first_name=teacher_first_name,
         teacher_last_name=teacher_last_name,
         teacher_email=teacher_email,
-        teacher_hashed_password=get_password_hash(teacher_password),
+        teacher_hashed_password=get_password_hash(teacher_plain_password),
     )
     db.add(new_teacher)
     db.commit()

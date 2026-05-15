@@ -21,7 +21,7 @@ from app.crud.teacher import (
 from app.crud.course import get_courses_for_student, new_course_for_student
 from app.crud.video import get_all_videos_from_course
 from app.crud.progress import upload_progress
-from app.core.security import create_access_token, get_current_student
+from app.core.security import create_access_token, get_current_student, create_refresh_token
 from app.models import Student
 from app.database import get_db
 
@@ -40,7 +40,7 @@ def register_student(student_in: Student_Registration, db: Session = Depends(get
             student_first_name=student_in.student_first_name,
             student_last_name=student_in.student_last_name,
             student_email=student_in.student_email,
-            student_password=student_in.student_password,
+            student_plain_password=student_in.student_plain_password,
         )
         return student
     
@@ -52,13 +52,18 @@ def student_sign_in(student_login_in : Student_Login_Input, db : Session = Depen
                                              student_email = student_login_in.student_email)
         
     if result_of_login:
-        data = {"sub" : str(result_of_login.student_id)}
 
-        access_token = create_access_token(data)
+        refresh_data = {"sub": str(result_of_login.student_id)}
+        access_data = {"sub" : str(result_of_login.student_id)}
+    
+        refresh_token = create_refresh_token(data = refresh_data, role = "student")
+        access_token = create_access_token(data = access_data, role = "student")
 
-
-        result = {"access_token" : access_token, "token_type" : "bearer"}
-        return result
+        return {
+            "access_token" : access_token,
+            "refresh_token" : refresh_token,
+            "token_type" : "bearer"
+        }
     raise HTTPException(status_code = 400, detail = "Email or password is not valid")
     
         
@@ -137,3 +142,4 @@ def work_with_progress(progress_in : Progress_Input, current_student : Student =
         return result
     
     raise HTTPException(status_code = 404, detail = "The video was not found!!!")
+

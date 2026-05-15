@@ -12,7 +12,8 @@ from app.crud.teacher import get_teacher_by_email, create_teacher, login_existin
 from app.crud.student import get_student, get_student_by_email, get_students
 from app.crud.course import create_course, get_courses_for_teacher
 from app.crud.video import upload_video, get_video_for_teacher
-from app.core.security import create_access_token, get_current_teacher
+from app.core.security import create_access_token, get_current_teacher, create_refresh_token
+from app.models import Teacher
 from app.database import get_db
 
 router = APIRouter(prefix="/teachers", tags=["Teachers"])
@@ -31,7 +32,7 @@ def register_teacher(teacher_in: Teacher_Registration, db: Session = Depends(get
             teacher_first_name=teacher_in.teacher_first_name,
             teacher_last_name=teacher_in.teacher_last_name,
             teacher_email=teacher_in.teacher_email,
-            teacher_password=teacher_in.teacher_password,
+            teacher_plain_password=teacher_in.teacher_plain_password,
         )
         return result
 
@@ -43,11 +44,18 @@ def teacher_sign_in(teacher_login_in : Teacher_Input_Login,  db : Session = Depe
                                              teacher_email = teacher_login_in.teacher_email, 
                                              teacher_plain_password = teacher_login_in.teacher_plain_password)
     if result_of_login:
-        data = {"sub" : str(result_of_login.teacher_id)}
-        access_token = create_access_token(data)
+    
+        refresh_data = {"sub": str(result_of_login.teacher_id)}
+        access_data = {"sub" : str(result_of_login.teacher_id)}
+    
+        refresh_token = create_refresh_token(data = refresh_data, role = "teacher")
+        access_token = create_access_token(data = access_data, role = "teacher")
 
-        result = {"access_token" : access_token, "token_type" : "bearer"}
-        return result 
+        return {
+            "access_token" : access_token,
+            "refresh_token" : refresh_token,
+            "token_type" : "bearer"
+        }
     raise HTTPException(status_code = 400, detail = "Email or password is invalid")
     
         
@@ -79,7 +87,7 @@ def show_student_to_teacher_by_email(
 
 @router.get("/get_students", response_model=list[Student_Output])
 def show_students_to_teacher(
-    course_id: int, current_teacher: int = Depends(get_current_teacher),  db: Session = Depends(get_db)
+    course_id: int, current_teacher: Teacher = Depends(get_current_teacher),  db: Session = Depends(get_db)
 ):
     students = get_students(db=db, teacher_id=current_teacher.teacher_id, course_id=course_id)
     if students:
@@ -90,15 +98,14 @@ def show_students_to_teacher(
 
 @router.post("/new_course", response_model=Output_Schema)
 def create_course_for_teacher(
-    registration_data: Course_Registration, db: Session = Depends(get_db)
+    registration_data: Course_Registration, current_teacher : Teacher = Depends(get_current_teacher), db: Session = Depends(get_db)
 ):
 
     new_course = create_course(
         db=db,
         course_name=registration_data.course_name,
         course_sphere=registration_data.course_sphere,
-        teacher_email=registration_data.teacher_email,
-        teacher_hashed_password=registration_data.teacher_hashed_password,
+        teacher_id = current_teacher.teacher_id
     )
     if new_course:
         return new_course
@@ -107,7 +114,7 @@ def create_course_for_teacher(
 
 
 @router.get("/teacher_courses", response_model=list[Output_Schema])
-def show_courses_to_teacher(current_teacher: int = Depends(get_current_teacher), db: Session = Depends(get_db)):
+def show_courses_to_teacher(current_teacher: Teacher = Depends(get_current_teacher), db: Session = Depends(get_db)):
     courses = get_courses_for_teacher(db=db, teacher_id=current_teacher.teacher_id)
     if courses:
         return courses
@@ -116,7 +123,7 @@ def show_courses_to_teacher(current_teacher: int = Depends(get_current_teacher),
 
 
 @router.post("/teacher_video", response_model=Video_Output)
-def create_video_for_teacher(video_in: Video_Upload, current_teacher: int = Depends(get_current_teacher), db: Session = Depends(get_db)):
+def create_video_for_teacher(video_in: Video_Upload, current_teacher: Teacher = Depends(get_current_teacher), db: Session = Depends(get_db)):
     check_video = get_video_for_teacher(
         db=db,
         course_id=video_in.course_id,

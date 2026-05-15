@@ -7,8 +7,7 @@ class Course_Base(BaseModel):
 
 
 class Course_Registration(Course_Base):
-    teacher_email: EmailStr
-    teacher_password: str = Field(..., min_length = 8)
+    pass
 
 
 class Output_Schema(Course_Base):
