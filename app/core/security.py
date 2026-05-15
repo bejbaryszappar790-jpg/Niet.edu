@@ -13,8 +13,6 @@ import os
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.crud.student import get_student
-from app.crud.teacher import get_teacher
 from app.database import get_db
 
 load_dotenv()
@@ -82,6 +80,7 @@ def decode_refresh_token(token : str):
 
 
 def get_current_student(student_id : int = Depends(get_current_user), db : Session = Depends(get_db)):
+    from app.crud.student import get_student
     check_student = get_student(db = db, student_id = student_id)
 
     if check_student:
@@ -90,6 +89,7 @@ def get_current_student(student_id : int = Depends(get_current_user), db : Sessi
     raise HTTPException(status_code = 403, detail = "Teacher is not allowed to use student's service for")
 
 def get_current_teacher(teacher_id : int = Depends(get_current_user), db : Session = Depends(get_db)):
+    from app.crud.teacher import get_teacher
     check_teacher = get_teacher(db = db, teacher_id = teacher_id)
     
     if check_teacher:
